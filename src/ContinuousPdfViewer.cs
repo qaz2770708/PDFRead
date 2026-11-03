@@ -172,6 +172,13 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
         NotifyReadingPosition();
     }
 
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        QueueVisibleRender();
+        NotifyReadingPosition();
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);

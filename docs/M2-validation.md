@@ -22,6 +22,7 @@ Compiled and ran `M2VerificationProbe` against a generated three-page PDF with p
 - Two PDFs open in separate tabs, and reopening the same path selects the existing tab instead of duplicating it.
 - The source PDF SHA-256 is unchanged after opening, rendering, and sidecar operations.
 - Opened the shipped sample through the actual `PdfReaderForm` message loop; the first selected tab activated its viewer, automatically populated the render cache, and produced a bitmap with visible text. The underlying Windows PDF API rendered 4,360 non-white pixels from the sample page.
+- In the actual form loop, simulated mouse-wheel scrolling and vertical scrollbar-thumb movement on a three-page PDF; both updated the toolbar page number, and wheel scrolling triggered rendering of the newly visible third page.
 
 The probes also produced `continuous-view.png`, `continuous-seam.png`, and `form-viewer-render.png` in the ignored `work/m2-tests/` directory. The captures show centered pages, adjacent pages in one scroll surface, and the sample PDF rendered in the actual viewer. Desktop automation screenshot capture timed out, so this validation does not claim a mouse-driven manual scroll check.
 
