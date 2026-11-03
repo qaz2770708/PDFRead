@@ -1,14 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.InteropServices.WindowsRuntime;
-using System.Security.Cryptography;
-using System.Threading.Tasks;
-using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 internal static class Program
@@ -18,7 +12,7 @@ internal static class Program
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new PdfReaderForm(args.Length > 0 ? args[0] : null));
+        Application.Run(new PdfReaderForm(args));
     }
 }
 
@@ -26,37 +20,30 @@ internal sealed class PdfReaderForm : Form
 {
     private readonly ToolStrip toolStrip = new ToolStrip();
     private readonly ToolStripButton openButton = new ToolStripButton("打开 PDF");
-    private readonly ToolStripButton previousButton = new ToolStripButton("‹");
-    private readonly ToolStripTextBox pageBox = new ToolStripTextBox { Width = 42, TextBoxTextAlign = HorizontalAlignment.Center, Enabled = false };
+    private readonly ToolStripButton closeButton = new ToolStripButton("关闭标签") { Enabled = false };
+    private readonly ToolStripButton previousButton = new ToolStripButton("‹") { Enabled = false };
+    private readonly ToolStripTextBox pageBox = new ToolStripTextBox { Width = 44, TextBoxTextAlign = HorizontalAlignment.Center, Enabled = false };
     private readonly ToolStripLabel pageTotalLabel = new ToolStripLabel("/ -");
-    private readonly ToolStripButton nextButton = new ToolStripButton("›");
-    private readonly ToolStripButton zoomOutButton = new ToolStripButton("−");
+    private readonly ToolStripButton nextButton = new ToolStripButton("›") { Enabled = false };
+    private readonly ToolStripButton zoomOutButton = new ToolStripButton("−") { Enabled = false };
     private readonly ToolStripLabel zoomLabel = new ToolStripLabel("82%");
-    private readonly ToolStripButton zoomInButton = new ToolStripButton("+");
+    private readonly ToolStripButton zoomInButton = new ToolStripButton("+") { Enabled = false };
     private readonly ToolStripButton highlightButton = new ToolStripButton("区域高亮：拖拽框选") { CheckOnClick = true, Enabled = false };
     private readonly ToolStripButton saveButton = new ToolStripButton("保存") { Enabled = false };
-    private readonly ToolStripLabel documentLabel = new ToolStripLabel("请打开 PDF") { TextAlign = ContentAlignment.MiddleLeft };
+    private readonly TabControl documentTabs = new TabControl { Dock = DockStyle.Fill, Alignment = TabAlignment.Top };
     private readonly StatusStrip statusStrip = new StatusStrip();
+    private readonly ToolStripStatusLabel documentLabel = new ToolStripStatusLabel("请打开 PDF") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripStatusLabel statusLabel = new ToolStripStatusLabel("未打开文档");
-    private readonly Panel scrollPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Color.FromArgb(233, 237, 242), Padding = new Padding(28) };
-    private readonly PageCanvas pageCanvas = new PageCanvas { BackColor = Color.White };
-    private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue, RecursionLimit = 64 };
+    private readonly List<DocumentSession> sessions = new List<DocumentSession>();
+    private readonly HashSet<DocumentSession> pendingProgressSaves = new HashSet<DocumentSession>();
+    private readonly Timer progressSaveTimer = new Timer { Interval = 800 };
+    private readonly string[] initialPaths;
+    private bool isClosing;
 
-    private object pdfDocument;
-    private string pdfPath;
-    private string sidecarPath;
-    private string pdfHash;
-    private int pageCount;
-    private int pageIndex;
-    private float zoom = 0.82f;
-    private bool dirty;
-    private SidecarFile sidecarData;
-    private VersionRecord activeRecord;
-    private readonly List<AreaHighlight> annotations = new List<AreaHighlight>();
-
-    public PdfReaderForm(string initialPath)
+    public PdfReaderForm(string[] args)
     {
-        Text = "PDF 阅读器 - 里程碑 1";
+        initialPaths = args ?? new string[0];
+        Text = "PDF 阅读器";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(760, 560);
         Size = new Size(1120, 820);
@@ -65,6 +52,7 @@ internal sealed class PdfReaderForm : Form
         toolStrip.GripStyle = ToolStripGripStyle.Hidden;
         toolStrip.Padding = new Padding(10, 4, 8, 4);
         toolStrip.Items.Add(openButton);
+        toolStrip.Items.Add(closeButton);
         toolStrip.Items.Add(new ToolStripSeparator());
         toolStrip.Items.Add(previousButton);
         toolStrip.Items.Add(pageBox);
@@ -84,27 +72,34 @@ internal sealed class PdfReaderForm : Form
         statusStrip.Items.Add(statusLabel);
         statusStrip.Dock = DockStyle.Bottom;
         statusStrip.BackColor = Color.White;
-
-        pageCanvas.Margin = new Padding(24);
-        pageCanvas.Location = new Point(28, 28);
-        scrollPanel.Controls.Add(pageCanvas);
-        Controls.Add(scrollPanel);
+        Controls.Add(documentTabs);
         Controls.Add(statusStrip);
         Controls.Add(toolStrip);
 
         openButton.Click += delegate { ShowOpenDialog(); };
-        previousButton.Click += delegate { NavigateTo(pageIndex - 1); };
-        nextButton.Click += delegate { NavigateTo(pageIndex + 1); };
-        zoomOutButton.Click += delegate { ChangeZoom(-0.1f); };
-        zoomInButton.Click += delegate { ChangeZoom(0.1f); };
-        saveButton.Click += delegate { SaveDocumentData(); };
+        closeButton.Click += delegate { CloseSelectedTab(); };
+        previousButton.Click += delegate { NavigateActive(-1); };
+        nextButton.Click += delegate { NavigateActive(1); };
+        zoomOutButton.Click += delegate { ChangeActiveZoom(-0.1f); };
+        zoomInButton.Click += delegate { ChangeActiveZoom(0.1f); };
+        saveButton.Click += delegate { DocumentSession session = ActiveSession; if (session != null) SaveSession(session); };
+        highlightButton.CheckedChanged += HighlightModeChanged;
         pageBox.KeyDown += PageBoxKeyDown;
-        pageCanvas.HighlightCreated += OnHighlightCreated;
-        pageCanvas.HighlightMode = false;
-        highlightButton.CheckedChanged += delegate { pageCanvas.HighlightMode = highlightButton.Checked; };
+        documentTabs.SelectedIndexChanged += SelectedTabChanged;
+        progressSaveTimer.Tick += ProgressSaveTimerTick;
         FormClosing += OnFormClosing;
-        Shown += delegate { if (!String.IsNullOrWhiteSpace(initialPath) && File.Exists(initialPath)) OpenPdf(initialPath); };
-        UpdateNavigationState();
+        FormClosed += delegate { DisposeSessions(); };
+        Shown += delegate
+        {
+            foreach (string path in initialPaths)
+                if (!String.IsNullOrWhiteSpace(path) && File.Exists(path)) OpenPdf(path);
+        };
+        UpdateToolbar(null);
+    }
+
+    private DocumentSession ActiveSession
+    {
+        get { return documentTabs.SelectedTab == null ? null : documentTabs.SelectedTab.Tag as DocumentSession; }
     }
 
     private void ShowOpenDialog()
@@ -112,215 +107,269 @@ internal sealed class PdfReaderForm : Form
         using (OpenFileDialog dialog = new OpenFileDialog())
         {
             dialog.Filter = "PDF 文件 (*.pdf)|*.pdf|所有文件 (*.*)|*.*";
-            dialog.Multiselect = false;
-            if (dialog.ShowDialog(this) == DialogResult.OK)
-                OpenPdf(dialog.FileName);
+            dialog.Multiselect = true;
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            foreach (string path in dialog.FileNames) OpenPdf(path);
         }
     }
 
     private void OpenPdf(string path)
     {
-        if (dirty && !SaveDocumentData()) return;
+        if (!File.Exists(path)) return;
         try
         {
             string fullPath = Path.GetFullPath(path);
-            string hash = CalculateSha256(fullPath);
-            object newDocument = PdfRenderer.Open(fullPath, out int newPageCount);
-            VersionRecord record = LoadMatchingRecord(fullPath, hash, newPageCount);
-            if (record == null)
+            string hash = DocumentDataRepository.CalculateSha256(fullPath);
+            DocumentSession samePath = sessions.FirstOrDefault(s => String.Equals(s.PdfPath, fullPath, StringComparison.OrdinalIgnoreCase));
+            if (samePath != null && String.Equals(samePath.PdfHash, hash, StringComparison.OrdinalIgnoreCase))
             {
-                PdfRenderer.DisposeDocument(newDocument);
+                documentTabs.SelectedTab = samePath.Tab;
+                return;
+            }
+            if (samePath != null)
+            {
+                DialogResult reload = MessageBox.Show(this,
+                    "这个路径下的 PDF 内容已改变。关闭旧版本标签并打开当前版本吗？旧版本的数据会保留。",
+                    "PDF 已更新", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (reload != DialogResult.Yes || !CloseSession(samePath)) return;
+            }
+
+            object pdf = WindowsPdfRenderer.Open(fullPath, out int count);
+            SidecarLoadResult loaded = DocumentDataRepository.LoadForPdf(fullPath, hash, count, this);
+            if (loaded == null)
+            {
+                WindowsPdfRenderer.DisposeDocument(pdf);
                 return;
             }
 
-            PdfRenderer.DisposeDocument(pdfDocument);
-            pdfDocument = newDocument;
-            pdfPath = fullPath;
-            sidecarPath = Path.ChangeExtension(fullPath, ".pdfdata");
-            pdfHash = hash;
-            pageCount = newPageCount;
-            activeRecord = record;
-            annotations.Clear();
-            annotations.AddRange(record.annotations ?? new List<AreaHighlight>());
-            pageIndex = Math.Max(0, Math.Min(record.lastPage, pageCount - 1));
-            pageBox.Enabled = true;
-            highlightButton.Enabled = true;
-            saveButton.Enabled = true;
-            dirty = false;
-            Text = "PDF 阅读器 - " + Path.GetFileName(fullPath);
-            documentLabel.Text = fullPath;
-            SetStatus("已保存", Color.FromArgb(24, 121, 78));
-            RenderCurrentPage();
+            DocumentSession session = new DocumentSession
+            {
+                PdfDocument = pdf,
+                PdfPath = fullPath,
+                PdfHash = hash,
+                SidecarPath = Path.ChangeExtension(fullPath, ".pdfdata"),
+                PageCount = count,
+                Data = loaded.Data,
+                Record = loaded.Record,
+                Annotations = loaded.Record.annotations ?? new List<AreaHighlight>(),
+                Dirty = loaded.NeedsSave,
+                ModifiedByRecoveryOrMigration = loaded.NeedsSave
+            };
+            session.Viewer = new ContinuousPdfViewer { Dock = DockStyle.Fill };
+            session.Viewer.Configure(session.PdfDocument, count, session.Record.zoom, session.Annotations);
+            session.Viewer.HighlightCreated += delegate(object sender, HighlightCreatedEventArgs e) { AddHighlight(session, e); };
+            session.Viewer.ActivePageChanged += delegate(object sender, int page) { ActivePageChanged(session, page); };
+            session.Viewer.ReadingPositionChanged += delegate(object sender, ReadingPositionEventArgs e) { ReadingPositionChanged(session, e); };
+            session.Viewer.SetHighlightMode(highlightButton.Checked);
+
+            session.Tab = new TabPage(Path.GetFileName(fullPath));
+            session.Tab.Tag = session;
+            session.Tab.Controls.Add(session.Viewer);
+            sessions.Add(session);
+            documentTabs.TabPages.Add(session.Tab);
+            documentTabs.SelectedTab = session.Tab;
+            UpdateTabTitle(session);
+            UpdateToolbar(session);
+
+            BeginInvoke((Action)delegate
+            {
+                if (!sessions.Contains(session)) return;
+                session.Viewer.GoToPage(session.Record.lastPage, session.Record.lastPageOffset);
+                if (session.ModifiedByRecoveryOrMigration) SaveSession(session);
+            });
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "无法打开或渲染 PDF。\r\n\r\n" + Unwrap(ex).Message, "打开失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, "无法打开 PDF。\r\n\r\n" + Unwrap(ex).Message, "打开失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
-    private VersionRecord LoadMatchingRecord(string path, string hash, int pages)
+    private void AddHighlight(DocumentSession session, HighlightCreatedEventArgs e)
     {
-        sidecarPath = Path.ChangeExtension(path, ".pdfdata");
-        sidecarData = new SidecarFile();
-        if (File.Exists(sidecarPath))
-        {
-            try
-            {
-                sidecarData = json.Deserialize<SidecarFile>(File.ReadAllText(sidecarPath)) ?? new SidecarFile();
-                if (sidecarData.formatVersion != 1)
-                {
-                    MessageBox.Show(this, "数据文件格式暂不支持。为保护数据，本次不会写入此文件。", "数据格式不兼容", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return null;
-                }
-                if (sidecarData.versions == null) sidecarData.versions = new List<VersionRecord>();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, "数据文件无法读取，原文件已保留且不会被覆盖。\r\n\r\n" + ex.Message, "数据文件错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return null;
-            }
-        }
-
-        VersionRecord match = sidecarData.versions.FirstOrDefault(v => String.Equals(v.sourceHash, hash, StringComparison.OrdinalIgnoreCase));
-        if (match != null) return match;
-        if (sidecarData.versions.Count > 0)
-        {
-            DialogResult choice = MessageBox.Show(this,
-                "检测到 PDF 内容与已有数据绑定的版本不同。旧注释可能不再对应当前页面。\r\n\r\n是：为当前 PDF 版本新建空数据记录并保留旧记录。\r\n否：沿用最近记录的注释并关联到当前版本。\r\n取消：取消打开。",
-                "PDF 内容已变化", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
-            if (choice == DialogResult.Cancel) return null;
-            if (choice == DialogResult.No)
-            {
-                DialogResult confirm = MessageBox.Show(this, "继续后，旧注释可能在页面上错位。旧版本数据仍会保留。是否继续沿用？",
-                    "确认沿用旧注释", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (confirm != DialogResult.Yes) return null;
-                VersionRecord prior = sidecarData.versions[sidecarData.versions.Count - 1];
-                VersionRecord copy = CloneRecord(prior);
-                copy.sourceHash = hash;
-                copy.sourceName = Path.GetFileName(path);
-                copy.pageCount = pages;
-                copy.lastPage = Math.Max(0, Math.Min(copy.lastPage, pages - 1));
-                copy.updatedUtc = DateTime.UtcNow.ToString("o");
-                sidecarData.versions.Add(copy);
-                return copy;
-            }
-        }
-
-        VersionRecord created = new VersionRecord
-        {
-            sourceHash = hash,
-            sourceName = Path.GetFileName(path),
-            pageCount = pages,
-            lastPage = 0,
-            annotations = new List<AreaHighlight>(),
-            updatedUtc = DateTime.UtcNow.ToString("o")
-        };
-        sidecarData.versions.Add(created);
-        return created;
-    }
-
-    private static VersionRecord CloneRecord(VersionRecord source)
-    {
-        JavaScriptSerializer serializer = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue };
-        return serializer.Deserialize<VersionRecord>(serializer.Serialize(source));
-    }
-
-    private void RenderCurrentPage()
-    {
-        if (pdfDocument == null) return;
-        try
-        {
-            Bitmap image = PdfRenderer.Render(pdfDocument, pageIndex, zoom);
-            pageCanvas.SetPage(image, annotations.Where(a => a.pageIndex == pageIndex).ToList());
-            pageBox.Text = (pageIndex + 1).ToString();
-            pageTotalLabel.Text = "/ " + pageCount;
-            zoomLabel.Text = Math.Round(zoom * 100).ToString() + "%";
-            UpdateNavigationState();
-            scrollPanel.AutoScrollPosition = new Point(0, 0);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, "无法渲染 PDF 页面。\r\n\r\n" + Unwrap(ex).Message, "渲染失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
-
-    private void NavigateTo(int target)
-    {
-        if (pdfDocument == null || target < 0 || target >= pageCount || target == pageIndex) return;
-        pageIndex = target;
-        dirty = true;
-        SaveDocumentData();
-        RenderCurrentPage();
-    }
-
-    private void ChangeZoom(float delta)
-    {
-        if (pdfDocument == null) return;
-        zoom = Math.Max(0.35f, Math.Min(2.2f, zoom + delta));
-        RenderCurrentPage();
-    }
-
-    private void PageBoxKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.KeyCode != Keys.Enter || pdfDocument == null) return;
-        if (Int32.TryParse(pageBox.Text, out int requested)) NavigateTo(Math.Max(0, Math.Min(pageCount - 1, requested - 1)));
-        e.SuppressKeyPress = true;
-    }
-
-    private void OnHighlightCreated(object sender, RectangleF rectangle)
-    {
+        RectangleF bounds = e.NormalizedBounds;
         AreaHighlight annotation = new AreaHighlight
         {
             id = Guid.NewGuid().ToString("N"),
             type = "area_highlight",
-            pageIndex = pageIndex,
+            pageIndex = e.PageIndex,
             coordinateSpace = "normalized_page",
-            x = Math.Round(rectangle.X / pageCanvas.Width, 8),
-            y = Math.Round(rectangle.Y / pageCanvas.Height, 8),
-            width = Math.Round(rectangle.Width / pageCanvas.Width, 8),
-            height = Math.Round(rectangle.Height / pageCanvas.Height, 8),
+            x = Math.Round(bounds.X, 8),
+            y = Math.Round(bounds.Y, 8),
+            width = Math.Round(bounds.Width, 8),
+            height = Math.Round(bounds.Height, 8),
             color = "#FFFF66",
             createdUtc = DateTime.UtcNow.ToString("o")
         };
-        annotations.Add(annotation);
-        pageCanvas.SetPage(pageCanvas.PageImage, annotations.Where(a => a.pageIndex == pageIndex).ToList());
-        dirty = true;
-        SetStatus("未保存", Color.FromArgb(180, 83, 9));
-        SaveDocumentData();
+        session.Annotations.Add(annotation);
+        session.Viewer.SetAnnotations(session.Annotations);
+        MarkDirty(session);
+        SaveSession(session);
     }
 
-    private bool SaveDocumentData()
+    private void ReadingPositionChanged(DocumentSession session, ReadingPositionEventArgs e)
     {
-        if (String.IsNullOrEmpty(pdfPath) || activeRecord == null || !dirty) return true;
+        bool changed = e.PageIndex != session.Record.lastPage ||
+            Math.Abs(e.PageOffset - session.Record.lastPageOffset) > 0.001 ||
+            Math.Abs(session.Viewer.Zoom - session.Record.zoom) > 0.001f;
+        if (!changed) return;
+        session.Record.lastPage = e.PageIndex;
+        session.Record.lastPageOffset = e.PageOffset;
+        session.Record.zoom = session.Viewer.Zoom;
+        if (!session.Dirty) MarkDirty(session);
+        pendingProgressSaves.Add(session);
+        progressSaveTimer.Stop();
+        progressSaveTimer.Start();
+    }
+
+    private void ActivePageChanged(DocumentSession session, int page)
+    {
+        if (ActiveSession != session) return;
+        pageBox.Text = (page + 1).ToString();
+        pageTotalLabel.Text = "/ " + session.PageCount;
+        previousButton.Enabled = page > 0;
+        nextButton.Enabled = page < session.PageCount - 1;
+    }
+
+    private void SelectedTabChanged(object sender, EventArgs e)
+    {
+        FlushPendingProgress();
+        DocumentSession active = ActiveSession;
+        foreach (DocumentSession session in sessions) session.Viewer.SetActive(session == active);
+        UpdateToolbar(active);
+        if (active != null)
+        {
+            active.Viewer.GoToPage(active.Record.lastPage, active.Record.lastPageOffset);
+            active.Viewer.Focus();
+        }
+    }
+
+    private void HighlightModeChanged(object sender, EventArgs e)
+    {
+        foreach (DocumentSession session in sessions) session.Viewer.SetHighlightMode(highlightButton.Checked);
+    }
+
+    private void NavigateActive(int delta)
+    {
+        DocumentSession session = ActiveSession;
+        if (session == null) return;
+        session.Viewer.GoToPage(session.Viewer.CurrentPage + delta, 0);
+    }
+
+    private void ChangeActiveZoom(float delta)
+    {
+        DocumentSession session = ActiveSession;
+        if (session == null) return;
+        session.Viewer.SetZoom(session.Viewer.Zoom + delta);
+        session.Record.zoom = session.Viewer.Zoom;
+        MarkDirty(session);
+        pendingProgressSaves.Add(session);
+        progressSaveTimer.Stop();
+        progressSaveTimer.Start();
+        zoomLabel.Text = Math.Round(session.Viewer.Zoom * 100).ToString() + "%";
+    }
+
+    private void PageBoxKeyDown(object sender, KeyEventArgs e)
+    {
+        DocumentSession session = ActiveSession;
+        if (e.KeyCode != Keys.Enter || session == null) return;
+        if (Int32.TryParse(pageBox.Text, out int requested))
+            session.Viewer.GoToPage(Math.Max(0, Math.Min(session.PageCount - 1, requested - 1)), 0);
+        e.SuppressKeyPress = true;
+    }
+
+    private void ProgressSaveTimerTick(object sender, EventArgs e)
+    {
+        progressSaveTimer.Stop();
+        FlushPendingProgress();
+    }
+
+    private void FlushPendingProgress()
+    {
+        progressSaveTimer.Stop();
+        foreach (DocumentSession session in pendingProgressSaves.ToArray())
+            if (sessions.Contains(session) && session.Dirty) SaveSession(session);
+        pendingProgressSaves.Clear();
+    }
+
+    private void MarkDirty(DocumentSession session)
+    {
+        session.Dirty = true;
+        UpdateTabTitle(session);
+        if (ActiveSession == session) SetStatus("未保存", Color.FromArgb(180, 83, 9));
+    }
+
+    private bool SaveSession(DocumentSession session)
+    {
+        if (session == null || !session.Dirty) return true;
+        int page;
+        double offset;
+        session.Viewer.CaptureReadingPosition(out page, out offset);
+        session.Record.lastPage = page;
+        session.Record.lastPageOffset = offset;
+        session.Record.zoom = session.Viewer.Zoom;
+        session.Record.annotations = session.Annotations.ToList();
+        if (ActiveSession == session) SetStatus("保存中…", Color.FromArgb(52, 64, 84));
         try
         {
-            activeRecord.lastPage = pageIndex;
-            activeRecord.annotations = annotations.ToList();
-            activeRecord.updatedUtc = DateTime.UtcNow.ToString("o");
-            sidecarData.formatVersion = 1;
-            sidecarData.lastSavedUtc = DateTime.UtcNow.ToString("o");
-            string temporary = sidecarPath + ".tmp";
-            File.WriteAllText(temporary, json.Serialize(sidecarData), new System.Text.UTF8Encoding(false));
-            if (File.Exists(sidecarPath))
-            {
-                string backup = sidecarPath + ".bak";
-                if (File.Exists(backup)) File.Delete(backup);
-                File.Replace(temporary, sidecarPath, backup);
-            }
-            else
-            {
-                File.Move(temporary, sidecarPath);
-            }
-            dirty = false;
-            SetStatus("已保存", Color.FromArgb(24, 121, 78));
+            DocumentDataRepository.Save(session);
+            session.Dirty = false;
+            session.ModifiedByRecoveryOrMigration = false;
+            pendingProgressSaves.Remove(session);
+            UpdateTabTitle(session);
+            if (ActiveSession == session) SetStatus("已保存", Color.FromArgb(24, 121, 78));
             return true;
         }
         catch (Exception ex)
         {
-            SetStatus("保存失败：请重试", Color.FromArgb(180, 35, 24));
-            MessageBox.Show(this, "无法保存独立数据文件。原 PDF 未被修改。\r\n\r\n" + ex.Message, "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            UpdateTabTitle(session);
+            if (ActiveSession == session) SetStatus("保存失败：请重试", Color.FromArgb(180, 35, 24));
+            MessageBox.Show(this, "无法保存独立数据文件。原 PDF 未被修改，当前修改仍保留在内存中。\r\n\r\n" + Unwrap(ex).Message,
+                "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
         }
+    }
+
+    private void UpdateTabTitle(DocumentSession session)
+    {
+        if (session.Tab == null) return;
+        string name = Path.GetFileName(session.PdfPath);
+        session.Tab.Text = session.Dirty ? name + " *" : name;
+    }
+
+    private void UpdateToolbar(DocumentSession session)
+    {
+        bool open = session != null;
+        closeButton.Enabled = open;
+        pageBox.Enabled = open;
+        previousButton.Enabled = open && session.Viewer.CurrentPage > 0;
+        nextButton.Enabled = open && session.Viewer.CurrentPage < session.PageCount - 1;
+        zoomOutButton.Enabled = open;
+        zoomInButton.Enabled = open;
+        highlightButton.Enabled = open;
+        saveButton.Enabled = open;
+        if (!open)
+        {
+            pageBox.Text = String.Empty;
+            pageTotalLabel.Text = "/ -";
+            zoomLabel.Text = "82%";
+            documentLabel.Text = "请打开 PDF";
+            highlightButton.Checked = false;
+            SetStatus("未打开文档", Color.FromArgb(82, 96, 109));
+            Text = "PDF 阅读器";
+            return;
+        }
+        int page;
+        double offset;
+        session.Viewer.CaptureReadingPosition(out page, out offset);
+        pageBox.Text = (page + 1).ToString();
+        pageTotalLabel.Text = "/ " + session.PageCount;
+        zoomLabel.Text = Math.Round(session.Viewer.Zoom * 100).ToString() + "%";
+        documentLabel.Text = session.PdfPath;
+        highlightButton.Checked = session.Viewer.HighlightMode;
+        Text = "PDF 阅读器 - " + Path.GetFileName(session.PdfPath);
+        SetStatus(session.Dirty ? "未保存" : "已保存", session.Dirty ? Color.FromArgb(180, 83, 9) : Color.FromArgb(24, 121, 78));
+        previousButton.Enabled = page > 0;
+        nextButton.Enabled = page < session.PageCount - 1;
     }
 
     private void SetStatus(string text, Color color)
@@ -329,254 +378,55 @@ internal sealed class PdfReaderForm : Form
         statusLabel.ForeColor = color;
     }
 
-    private void UpdateNavigationState()
+    private void CloseSelectedTab()
     {
-        previousButton.Enabled = pdfDocument != null && pageIndex > 0;
-        nextButton.Enabled = pdfDocument != null && pageIndex < pageCount - 1;
+        DocumentSession session = ActiveSession;
+        if (session != null) CloseSession(session);
+    }
+
+    private bool CloseSession(DocumentSession session)
+    {
+        if (session.Dirty && !SaveSession(session)) return false;
+        pendingProgressSaves.Remove(session);
+        sessions.Remove(session);
+        documentTabs.TabPages.Remove(session.Tab);
+        session.Viewer.Dispose();
+        WindowsPdfRenderer.DisposeDocument(session.PdfDocument);
+        UpdateToolbar(ActiveSession);
+        return true;
     }
 
     private void OnFormClosing(object sender, FormClosingEventArgs e)
     {
-        if (dirty && !SaveDocumentData()) e.Cancel = true;
-        if (!e.Cancel) PdfRenderer.DisposeDocument(pdfDocument);
+        if (isClosing) return;
+        FlushPendingProgress();
+        foreach (DocumentSession session in sessions.ToArray())
+        {
+            if (session.Dirty && !SaveSession(session))
+            {
+                e.Cancel = true;
+                return;
+            }
+        }
+        isClosing = true;
     }
 
-    private static string CalculateSha256(string path)
+    private void DisposeSessions()
     {
-        using (SHA256 sha = SHA256.Create())
-        using (FileStream stream = File.OpenRead(path))
-            return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+        progressSaveTimer.Stop();
+        progressSaveTimer.Dispose();
+        foreach (DocumentSession session in sessions.ToArray())
+        {
+            session.Viewer.Dispose();
+            WindowsPdfRenderer.DisposeDocument(session.PdfDocument);
+        }
+        sessions.Clear();
     }
 
     private static Exception Unwrap(Exception ex)
     {
         AggregateException aggregate = ex as AggregateException;
-        return aggregate != null && aggregate.InnerException != null ? aggregate.InnerException : ex;
+        if (aggregate != null && aggregate.InnerException != null) return aggregate.InnerException;
+        return ex.InnerException ?? ex;
     }
-}
-
-internal sealed class PageCanvas : Control
-{
-    private List<AreaHighlight> highlights = new List<AreaHighlight>();
-    private bool dragging;
-    private Point dragStart;
-    private Point dragEnd;
-
-    public bool HighlightMode { get; set; }
-    public Bitmap PageImage { get; private set; }
-    public event EventHandler<RectangleF> HighlightCreated;
-
-    public PageCanvas()
-    {
-        DoubleBuffered = true;
-        SetStyle(ControlStyles.ResizeRedraw | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint, true);
-    }
-
-    public void SetPage(Bitmap image, List<AreaHighlight> pageHighlights)
-    {
-        if (PageImage != null && !Object.ReferenceEquals(PageImage, image)) PageImage.Dispose();
-        PageImage = image;
-        highlights = pageHighlights ?? new List<AreaHighlight>();
-        if (image != null)
-        {
-            Size = image.Size;
-            MinimumSize = image.Size;
-        }
-        Invalidate();
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        base.OnPaint(e);
-        if (PageImage == null) return;
-        e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        e.Graphics.DrawImage(PageImage, 0, 0, Width, Height);
-        foreach (AreaHighlight annotation in highlights)
-        {
-            RectangleF rect = ToPixels(annotation);
-            using (Brush fill = new SolidBrush(Color.FromArgb(112, 255, 230, 75)))
-            using (Pen outline = new Pen(Color.FromArgb(215, 220, 158, 20), 1))
-            {
-                e.Graphics.FillRectangle(fill, rect);
-                e.Graphics.DrawRectangle(outline, rect.X, rect.Y, rect.Width, rect.Height);
-            }
-        }
-        if (dragging)
-        {
-            Rectangle rect = MakeRectangle(dragStart, dragEnd);
-            using (Brush fill = new SolidBrush(Color.FromArgb(85, 255, 210, 65)))
-            using (Pen outline = new Pen(Color.FromArgb(230, 218, 152, 15), 1))
-            {
-                e.Graphics.FillRectangle(fill, rect);
-                e.Graphics.DrawRectangle(outline, rect);
-            }
-        }
-    }
-
-    private RectangleF ToPixels(AreaHighlight annotation)
-    {
-        return new RectangleF((float)(annotation.x * Width), (float)(annotation.y * Height),
-            Math.Max(2, (float)(annotation.width * Width)), Math.Max(2, (float)(annotation.height * Height)));
-    }
-
-    protected override void OnMouseDown(MouseEventArgs e)
-    {
-        base.OnMouseDown(e);
-        if (e.Button != MouseButtons.Left || !HighlightMode || PageImage == null) return;
-        dragging = true;
-        dragStart = e.Location;
-        dragEnd = e.Location;
-        Capture = true;
-        Invalidate();
-    }
-
-    protected override void OnMouseMove(MouseEventArgs e)
-    {
-        base.OnMouseMove(e);
-        if (!dragging) return;
-        dragEnd = e.Location;
-        Invalidate();
-    }
-
-    protected override void OnMouseUp(MouseEventArgs e)
-    {
-        base.OnMouseUp(e);
-        if (!dragging || e.Button != MouseButtons.Left) return;
-        dragging = false;
-        Capture = false;
-        dragEnd = e.Location;
-        Rectangle rect = MakeRectangle(dragStart, dragEnd);
-        Invalidate();
-        if (rect.Width < 3 || rect.Height < 3 || Width <= 0 || Height <= 0) return;
-        RectangleF normalized = new RectangleF((float)rect.X / Width, (float)rect.Y / Height,
-            (float)rect.Width / Width, (float)rect.Height / Height);
-        EventHandler<RectangleF> handler = HighlightCreated;
-        if (handler != null) handler(this, normalized);
-    }
-
-    private static Rectangle MakeRectangle(Point first, Point second)
-    {
-        int x = Math.Min(first.X, second.X);
-        int y = Math.Min(first.Y, second.Y);
-        return new Rectangle(x, y, Math.Abs(first.X - second.X), Math.Abs(first.Y - second.Y));
-    }
-}
-
-internal static class PdfRenderer
-{
-    private static readonly Type StorageFileType = ResolveWinRtType("Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime");
-    private static readonly Type PdfDocumentType = ResolveWinRtType("Windows.Data.Pdf.PdfDocument, Windows.Data.Pdf, ContentType=WindowsRuntime");
-    private static readonly Type PdfPageOptionsType = ResolveWinRtType("Windows.Data.Pdf.PdfPageRenderOptions, Windows.Data.Pdf, ContentType=WindowsRuntime");
-    private static readonly Type RandomAccessStreamType = ResolveWinRtType("Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Storage, ContentType=WindowsRuntime");
-    private static readonly Type DataReaderType = ResolveWinRtType("Windows.Storage.Streams.DataReader, Windows.Storage, ContentType=WindowsRuntime");
-
-    public static object Open(string path, out int pageCount)
-    {
-        MethodInfo getFile = StorageFileType.GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .First(m => m.Name == "GetFileFromPathAsync" && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(String));
-        object storageFile = AwaitOperation(getFile.Invoke(null, new object[] { Path.GetFullPath(path) }), StorageFileType);
-        MethodInfo load = PdfDocumentType.GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .First(m => m.Name == "LoadFromFileAsync" && m.GetParameters().Length == 1);
-        object document = AwaitOperation(load.Invoke(null, new[] { storageFile }), PdfDocumentType);
-        pageCount = Convert.ToInt32(PdfDocumentType.GetProperty("PageCount").GetValue(document, null));
-        return document;
-    }
-
-    public static Bitmap Render(object document, int pageIndex, float zoom)
-    {
-        MethodInfo getPage = PdfDocumentType.GetMethod("GetPage", new[] { typeof(UInt32) });
-        object page = getPage.Invoke(document, new object[] { (UInt32)pageIndex });
-        Type pageType = page.GetType();
-        object size = pageType.GetProperty("Size").GetValue(page, null);
-        double width = Convert.ToDouble(size.GetType().GetProperty("Width").GetValue(size, null));
-        double height = Convert.ToDouble(size.GetType().GetProperty("Height").GetValue(size, null));
-        uint destinationWidth = (uint)Math.Max(1, Math.Ceiling(width * zoom));
-        uint destinationHeight = (uint)Math.Max(1, Math.Ceiling(height * zoom));
-        object options = Activator.CreateInstance(PdfPageOptionsType);
-        PdfPageOptionsType.GetProperty("DestinationWidth").SetValue(options, destinationWidth, null);
-        PdfPageOptionsType.GetProperty("DestinationHeight").SetValue(options, destinationHeight, null);
-        object stream = Activator.CreateInstance(RandomAccessStreamType);
-        MethodInfo render = pageType.GetMethods().First(m => m.Name == "RenderToStreamAsync" && m.GetParameters().Length == 2);
-        AwaitAction(render.Invoke(page, new[] { stream, options }));
-        ulong streamSize = Convert.ToUInt64(RandomAccessStreamType.GetProperty("Size").GetValue(stream, null));
-        object inputStream = RandomAccessStreamType.GetMethod("GetInputStreamAt").Invoke(stream, new object[] { (ulong)0 });
-        object reader = Activator.CreateInstance(DataReaderType, new[] { inputStream });
-        MethodInfo loadReader = DataReaderType.GetMethod("LoadAsync", new[] { typeof(UInt32) });
-        AwaitOperation(loadReader.Invoke(reader, new object[] { checked((uint)streamSize) }), typeof(UInt32));
-        byte[] bytes = new byte[checked((int)streamSize)];
-        DataReaderType.GetMethods().First(m => m.Name == "ReadBytes" && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(byte[]))
-            .Invoke(reader, new object[] { bytes });
-        Bitmap result;
-        using (MemoryStream memory = new MemoryStream(bytes))
-        using (Image decoded = Image.FromStream(memory))
-            result = new Bitmap(decoded);
-        (page as IDisposable)?.Dispose();
-        (stream as IDisposable)?.Dispose();
-        (reader as IDisposable)?.Dispose();
-        return result;
-    }
-
-    public static void DisposeDocument(object document)
-    {
-        IDisposable disposable = document as IDisposable;
-        if (disposable != null) disposable.Dispose();
-    }
-
-    private static Type ResolveWinRtType(string name)
-    {
-        Type type = Type.GetType(name, false);
-        if (type == null) throw new InvalidOperationException("Windows PDF rendering type is unavailable: " + name);
-        return type;
-    }
-
-    private static object AwaitOperation(object operation, Type resultType)
-    {
-        MethodInfo asTask = typeof(System.WindowsRuntimeSystemExtensions).GetMethods()
-            .First(m => m.Name == "AsTask" && m.IsGenericMethod && m.GetParameters().Length == 1);
-        Task task = (Task)asTask.MakeGenericMethod(resultType).Invoke(null, new[] { operation });
-        task.GetAwaiter().GetResult();
-        return task.GetType().GetProperty("Result").GetValue(task, null);
-    }
-
-    private static void AwaitAction(object action)
-    {
-        MethodInfo asTask = typeof(System.WindowsRuntimeSystemExtensions).GetMethods()
-            .First(m => m.Name == "AsTask" && !m.IsGenericMethod && m.GetParameters().Length == 1);
-        Task task = (Task)asTask.Invoke(null, new[] { action });
-        task.GetAwaiter().GetResult();
-    }
-}
-
-[Serializable]
-internal sealed class SidecarFile
-{
-    public int formatVersion { get; set; } = 1;
-    public List<VersionRecord> versions { get; set; } = new List<VersionRecord>();
-    public string lastSavedUtc { get; set; }
-}
-
-[Serializable]
-internal sealed class VersionRecord
-{
-    public string sourceHash { get; set; }
-    public string sourceName { get; set; }
-    public int pageCount { get; set; }
-    public int lastPage { get; set; }
-    public List<AreaHighlight> annotations { get; set; } = new List<AreaHighlight>();
-    public string updatedUtc { get; set; }
-}
-
-[Serializable]
-internal sealed class AreaHighlight
-{
-    public string id { get; set; }
-    public string type { get; set; }
-    public int pageIndex { get; set; }
-    public string coordinateSpace { get; set; }
-    public double x { get; set; }
-    public double y { get; set; }
-    public double width { get; set; }
-    public double height { get; set; }
-    public string color { get; set; }
-    public string createdUtc { get; set; }
 }

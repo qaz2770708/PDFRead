@@ -16,5 +16,12 @@ $builtExe = Join-Path $repoRoot "bin\$Configuration\net48\PDFReader.exe"
 if (-not (Test-Path $builtExe)) {
     throw "Build output not found: $builtExe"
 }
-Copy-Item -LiteralPath $builtExe -Destination $outputPath -Force
-Write-Host "Built $outputPath"
+$outputDirectory = Split-Path -Parent $outputPath
+foreach ($fileName in @('PDFReader.exe', 'PDFReader.exe.config', 'System.Runtime.WindowsRuntime.dll')) {
+    $source = Join-Path (Split-Path -Parent $builtExe) $fileName
+    if (-not (Test-Path $source)) {
+        throw "Required runtime file not found: $source"
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $outputDirectory $fileName) -Force
+}
+Write-Host "Built release files in $outputDirectory"

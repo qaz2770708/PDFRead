@@ -5,5 +5,7 @@ work/
 *.pdfdata
 *.pdfdata.bak
 *.pdfdata.tmp
+*.pdfdata.recovered.bak
+*.pdfdata.recovered.tmp
 PDFReader-error.log
 PDFReader-debug.log

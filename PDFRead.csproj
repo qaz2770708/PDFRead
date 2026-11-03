@@ -12,6 +12,9 @@
 
   <ItemGroup>
     <Compile Include="src\PDFReaderApp.cs" />
+    <Compile Include="src\ContinuousPdfViewer.cs" />
+    <Compile Include="src\DocumentData.cs" />
+    <Compile Include="src\WindowsPdfRenderer.cs" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Runtime.WindowsRuntime">
       <HintPath>$(SystemRoot)\Microsoft.NET\Framework64\v4.0.30319\System.Runtime.WindowsRuntime.dll</HintPath>
