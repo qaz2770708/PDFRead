@@ -168,6 +168,9 @@ internal sealed class PdfReaderForm : Form
             sessions.Add(session);
             documentTabs.TabPages.Add(session.Tab);
             documentTabs.SelectedTab = session.Tab;
+            DocumentSession active = ActiveSession;
+            foreach (DocumentSession openSession in sessions)
+                openSession.Viewer.SetActive(openSession == active);
             UpdateTabTitle(session);
             UpdateToolbar(session);
 
