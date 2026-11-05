@@ -95,9 +95,9 @@ internal static class IntegrationAcceptance
                 var tree=(TreeView)Field(form,"bookmarkTree");
                 Call(tree,"OnAfterLabelEdit",new NodeLabelEditEventArgs(tree.SelectedNode,"Renamed section"));Application.DoEvents();
                 Check(s.Record.bookmarks[1].title=="Renamed section","bookmark label editing");
-                Call(form,"ChangeBookmarkLevel",false);Check(String.IsNullOrEmpty(s.Record.bookmarks[1].parentId),"bookmark outdent");
-                string childId=s.Record.bookmarks[1].id;Call(form,"MoveBookmark",-1);Check(s.Record.bookmarks[0].id==childId,"bookmark sibling reorder");
-                Call(form,"MoveBookmark",1);Call(form,"ChangeBookmarkLevel",true);Check(s.Record.bookmarks[1].parentId==parent.id,"bookmark indent");
+                form.TryMoveBookmark(s.Record.bookmarks[1].id,null,BookmarkDropPosition.Root);Check(String.IsNullOrEmpty(s.Record.bookmarks[1].parentId),"bookmark outdent");
+                string childId=s.Record.bookmarks[1].id;form.TryMoveBookmark(childId,parent.id,BookmarkDropPosition.Before);Check(s.Record.bookmarks[0].id==childId,"bookmark sibling reorder");
+                form.TryMoveBookmark(childId,parent.id,BookmarkDropPosition.Inside);Check(s.Record.bookmarks[1].parentId==parent.id,"bookmark indent");
                 viewer.GoToPage(2,.1);Call(form,"UpdateBookmarkPosition");Check(s.Record.bookmarks[1].pageIndex==2,"bookmark update target");
                 Call(form,"ActivateBookmark",tree.Nodes[0]);Check(viewer.CurrentPage==1 && Math.Abs(viewer.Zoom-1.4)<.001,"bookmark restores page and zoom");
                 viewer.CaptureReadingPosition(out int p,out double off);Check(Math.Abs(off-offset)<.005,"bookmark restores page offset");

@@ -42,6 +42,8 @@ internal sealed partial class PdfReaderForm
         dataButton.DropDownItems.Add("另存并切换数据文件… (Ctrl+Shift+S)",null,delegate{SaveDataElsewhere(ActiveSession,true);});
         dataButton.DropDownItems.Add("导出随 PDF 的同名数据…",null,delegate{SaveDataElsewhere(ActiveSession,false);});
         dataButton.DropDownItems.Add("加载数据文件…",null,delegate{ChooseDataFile();});
+        dataButton.DropDownItems.Add(new ToolStripSeparator());
+        dataButton.DropDownItems.Add("导出带注释的 PDF… (Ctrl+E)",null,delegate{ChooseAnnotatedPdfExport();});
         historyStrip.Items.Insert(1,dataButton);saveButton.Size=new Size(35,28);annotationUndo.Size=annotationRedo.Size=new Size(32,28);
     }
     private bool SaveDataElsewhere(DocumentSession s,bool switchTarget)

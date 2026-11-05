@@ -9,7 +9,7 @@ internal sealed partial class PdfReaderForm
     private readonly SplitContainer navigationSplit = new SplitContainer { Dock = DockStyle.Fill, Width = 1120, SplitterDistance = 810, Panel1MinSize = 300, Panel2MinSize = 260, Panel2Collapsed = true, FixedPanel = FixedPanel.Panel2 };
     private readonly TabControl navigationTabs = new TabControl { Dock = DockStyle.Fill };
     private readonly TreeView outlineTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true };
-    private readonly TreeView bookmarkTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false, LabelEdit = true, ShowNodeToolTips = true };
+    private readonly BookmarkTreeView bookmarkTree = new BookmarkTreeView { Dock = DockStyle.Fill, HideSelection = false, LabelEdit = true, ShowNodeToolTips = true };
     private readonly Label outlineMessage = new Label { Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(260,0), Padding = new Padding(6) };
     private readonly ToolStrip bookmarkTools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top };
     private DocumentSession navigationSession;
@@ -37,21 +37,15 @@ internal sealed partial class PdfReaderForm
         thumbnailTimer.Start();
         navigationTabs.SelectedIndexChanged += delegate { UpdateNavigationButtons(); };
         AddBookmarkTool("添加", "添加当前位置 (Ctrl+D)", () => AddBookmark(false));
-        AddBookmarkTool("子级", "在选中书签下添加子书签", () => AddBookmark(true));
-        AddBookmarkTool("改名", "重命名 (F2)", () => { if(bookmarkTree.SelectedNode != null) bookmarkTree.SelectedNode.BeginEdit(); });
-        AddBookmarkTool("更新位置", "把选中书签定位更新为当前阅读位置", UpdateBookmarkPosition);
         AddBookmarkTool("删除", "删除选中书签及子级 (Delete)", DeleteSelectedBookmark);
-        AddBookmarkTool("↑", "同级上移", () => MoveBookmark(-1));
-        AddBookmarkTool("↓", "同级下移", () => MoveBookmark(1));
-        AddBookmarkTool("→", "降一级：移入前一个同级书签", () => ChangeBookmarkLevel(true));
-        AddBookmarkTool("←", "升一级：移到上一级", () => ChangeBookmarkLevel(false));
+        InitializeBookmarkInteraction();
         outlineTree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
             if (e.X >= e.Node.Bounds.Left) ActivateOutline(e.Node);
         };
         outlineTree.KeyDown += delegate(object sender, KeyEventArgs e) { if(e.KeyCode==Keys.Enter) { ActivateOutline(outlineTree.SelectedNode); e.SuppressKeyPress=true; } };
-        bookmarkTree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e) { if(e.Button==MouseButtons.Left) ActivateBookmark(e.Node); };
+        bookmarkTree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e) { if(e.Button==MouseButtons.Left && !bookmarkDragged && e.X>=e.Node.Bounds.Left) ActivateBookmark(e.Node); };
         bookmarkTree.KeyDown += delegate(object sender, KeyEventArgs e)
         {
             if(e.KeyCode==Keys.Enter) { ActivateBookmark(bookmarkTree.SelectedNode); e.SuppressKeyPress=true; }
@@ -111,6 +105,8 @@ internal sealed partial class PdfReaderForm
     private void RefreshBookmarks()
     {
         string selected=(bookmarkTree.SelectedNode?.Tag as UserBookmark)?.id;
+        var known=new HashSet<string>();var expanded=new HashSet<string>();Action<TreeNodeCollection> remember=null;
+        remember=nodes=>{foreach(TreeNode n in nodes){var id=(n.Tag as UserBookmark)?.id;if(id!=null){known.Add(id);if(n.IsExpanded)expanded.Add(id);}remember(n.Nodes);}};remember(bookmarkTree.Nodes);
         bookmarkTree.BeginUpdate(); bookmarkTree.Nodes.Clear();
         if(navigationSession!=null)
         {
@@ -128,7 +124,8 @@ internal sealed partial class PdfReaderForm
             foreach(var b in all.Where(b=>String.IsNullOrEmpty(b.parentId) || !all.Any(p=>p.id==b.parentId))) add(b,bookmarkTree.Nodes,0);
             foreach(var b in all.Where(b=>!added.Contains(b)).ToArray())add(b,bookmarkTree.Nodes,0);
         }
-        bookmarkTree.ExpandAll();bookmarkTree.EndUpdate();
+        Action<TreeNodeCollection> restore=null;restore=nodes=>{foreach(TreeNode n in nodes){var id=(n.Tag as UserBookmark)?.id;if(!known.Contains(id)||expanded.Contains(id))n.Expand();restore(n.Nodes);}};restore(bookmarkTree.Nodes);
+        bookmarkTree.EndUpdate();UpdateBookmarkDeleteButton();
     }
     private void CaptureBookmark(DocumentSession s,UserBookmark b)
     {
@@ -142,7 +139,7 @@ internal sealed partial class PdfReaderForm
         var b=new UserBookmark { id=Guid.NewGuid().ToString("N"),title="第 "+(s.Viewer.CurrentPage+1)+" 页",parentId=parent?.id,createdUtc=DateTime.UtcNow.ToString("o") };
         CaptureBookmark(s,b);s.Record.bookmarks.Add(b);MarkDirty(s);SaveSession(s);
         ShowNavigation(1); RefreshBookmarks();
-        var found=FindBookmarkNode(bookmarkTree.Nodes,b.id);bookmarkTree.SelectedNode=found;found?.EnsureVisible();
+        var found=FindBookmarkNode(bookmarkTree.Nodes,b.id);bookmarkTree.SelectedNode=found;found?.Parent?.Expand();found?.EnsureVisible();
     }
     private static TreeNode FindBookmarkNode(TreeNodeCollection nodes,string id)
     {
@@ -163,7 +160,12 @@ internal sealed partial class PdfReaderForm
     private void DeleteSelectedBookmark()
     {
         var s=ActiveSession;var b=bookmarkTree.SelectedNode?.Tag as UserBookmark;if(s==null || b==null)return;
-        if(MessageBox.Show(this,"删除书签“"+b.title+"”及其所有子书签？","删除书签",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+        if(s.Record.bookmarks.Any(x=>x.parentId==b.id))
+        {
+            string question="删除书签“"+b.title+"”及其所有子书签？";
+            bool confirmed=BookmarkDeleteConfirmationOverride!=null?BookmarkDeleteConfirmationOverride(question):MessageBox.Show(this,question,"删除书签",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes;
+            if(!confirmed)return;
+        }
         RemoveBookmarkTree(s,b);MarkDirty(s);SaveSession(s);RefreshBookmarks();
     }
     internal static void RemoveBookmarkTree(DocumentSession s,UserBookmark b)
@@ -171,28 +173,5 @@ internal sealed partial class PdfReaderForm
         var remove=new HashSet<UserBookmark> { b };bool changed;
         do { changed=false;foreach(var item in s.Record.bookmarks) if(!remove.Contains(item) && !String.IsNullOrEmpty(item.parentId) && remove.Any(p=>p.id==item.parentId))changed|=remove.Add(item); }while(changed);
         s.Record.bookmarks.RemoveAll(x=>remove.Contains(x));
-    }
-    private void ChangeBookmarkLevel(bool indent)
-    {
-        var s=ActiveSession;var b=bookmarkTree.SelectedNode?.Tag as UserBookmark;if(s==null || b==null)return;
-        if(indent)
-        {
-            var siblings=s.Record.bookmarks.Where(x=>x.parentId==b.parentId).ToList();int i=siblings.IndexOf(b);
-            if(i<=0)return;b.parentId=siblings[i-1].id;
-        }
-        else
-        {
-            var parent=s.Record.bookmarks.FirstOrDefault(x=>x.id==b.parentId);if(parent==null)return;b.parentId=parent.parentId;
-        }
-        MarkDirty(s);SaveSession(s);RefreshBookmarks();
-    }
-    private void MoveBookmark(int direction)
-    {
-        var s=ActiveSession;var b=bookmarkTree.SelectedNode?.Tag as UserBookmark;if(s==null || b==null)return;
-        var siblings=s.Record.bookmarks.Where(x=>x.parentId==b.parentId).ToList();int i=siblings.IndexOf(b),next=i+direction;
-        if(next<0 || next>=siblings.Count)return;
-        int a=s.Record.bookmarks.IndexOf(b),c=s.Record.bookmarks.IndexOf(siblings[next]);
-        s.Record.bookmarks[a]=siblings[next];s.Record.bookmarks[c]=b;
-        MarkDirty(s);SaveSession(s);RefreshBookmarks();
     }
 }

@@ -22,7 +22,7 @@ internal static class PersistenceUiAcceptance
     if(stage==0)
     {
      Check(Path.GetFileName(s.SidecarPath)=="报告.pdfdata" && File.Exists(s.SidecarPath),"application creates named data file under hash namespace");
-     Check(((ToolStripDropDownButton)Field(form,"dataButton")).DropDownItems.Count==4,"data menu offers retry save-as export and import");
+     Check(((ToolStripDropDownButton)Field(form,"dataButton")).DropDownItems.OfType<ToolStripMenuItem>().Count()==5,"data menu offers retry save-as export and import");
      v.SetZoom(.75f);v.GoToPage(0,0);Key(form,Keys.Control|Keys.D);Key(form,Keys.Control|Keys.Shift|Keys.N);Click(v,.3f,.3f);
      Check(editor.IsOpen && editor.Draft.type=="sticky_note" && editor.Subtitle.Visible,"sticky tool opens editable page note with subtitle");
      editor.Input.Text="第五步便签正文";editor.Subtitle.Text="副文本随文件迁移";editor.ColorButtons[2].PerformClick();stickyId=editor.Draft.id;

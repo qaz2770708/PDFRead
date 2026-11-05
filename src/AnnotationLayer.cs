@@ -223,6 +223,12 @@ internal sealed class AnnotationLayer
         }
         graphics.Restore(state);
     }
+    internal static void PaintAppearance(Graphics graphics,Rectangle page,int pageIndex,float zoom,IEnumerable<AreaHighlight> annotations)
+    {
+        var state=graphics.Save();graphics.SetClip(page,CombineMode.Intersect);graphics.SmoothingMode=SmoothingMode.AntiAlias;
+        foreach(var mark in annotations)if(mark.pageIndex==pageIndex)DrawMark(graphics,page,mark,zoom);
+        graphics.Restore(state);
+    }
     private static RectangleF ScreenBounds(Rectangle page,RectangleF r){return new RectangleF(page.X+r.X*page.Width,page.Y+r.Y*page.Height,r.Width*page.Width,r.Height*page.Height);}
     private static void DrawMark(Graphics g,Rectangle page,AreaHighlight m,float zoom)
     {

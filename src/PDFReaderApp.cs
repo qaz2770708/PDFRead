@@ -100,6 +100,7 @@ internal sealed partial class PdfReaderForm : Form
         if(s!=null && s.Viewer.HandleInlineKey(keyData))return true;
         switch (keyData)
         {
+            case Keys.Control | Keys.E: ChooseAnnotatedPdfExport(); return true;
             case Keys.Control | Keys.O: ShowOpenDialog(); return true;
             case Keys.F1: ShowShortcutHelp(); return true;
             case Keys.Control | Keys.W: CloseSelectedTab(); return true;
@@ -141,7 +142,7 @@ internal sealed partial class PdfReaderForm : Form
 
     private void ShowShortcutHelp()
     {
-        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据；Ctrl+Shift+S 另存数据\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+A 选择/移动；Ctrl+Shift+H 高亮\r\nCtrl+Shift+U 下划线；Ctrl+Shift+T 文本批注\r\nCtrl+Shift+P 手写；Ctrl+Shift+R 矩形\r\nCtrl+Shift+E 椭圆；Ctrl+Shift+L 直线\r\nCtrl+Shift+N 页面便签（含副文本）\r\n文本框内直接输入；Ctrl+Enter 完成；Esc 取消待保存编辑\r\nF2 专业属性；Delete 删除；Ctrl+Z/Y 撤销/重做\r\nCtrl+D 添加用户书签；Ctrl+B 显示/隐藏导航栏\r\n书签树中 F2 重命名，Delete 删除，Enter 跳转\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据；Ctrl+Shift+S 另存数据\r\nCtrl+E 导出带注释 PDF\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+A 选择/移动；Ctrl+Shift+H 高亮\r\nCtrl+Shift+U 下划线；Ctrl+Shift+T 文本批注\r\nCtrl+Shift+P 手写；Ctrl+Shift+R 矩形\r\nCtrl+Shift+E 椭圆；Ctrl+Shift+L 直线\r\nCtrl+Shift+N 页面便签（含副文本）\r\n文本框内直接输入；Ctrl+Enter 完成；Esc 取消待保存编辑\r\nF2 专业属性；Delete 删除；Ctrl+Z/Y 撤销/重做\r\nCtrl+D 添加用户书签；Ctrl+B 显示/隐藏导航栏\r\n书签树中 F2 重命名，Delete 删除，Enter 跳转\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void ShowOpenDialog()

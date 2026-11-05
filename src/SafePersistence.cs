@@ -152,6 +152,12 @@ internal static partial class DocumentDataRepository
         if(!changed && File.Exists(target))try{RegisterLocation(pdfPath,hash,target);}catch(Exception ex){System.Diagnostics.Debug.WriteLine(ex.Message);}
         return new SidecarLoadResult{Data=data,Record=record,NeedsSave=changed,TargetPath=target,ExpectedDataHash=Fingerprint(target)};
     }
+    internal static VersionRecord ReadExportRecord(string path,string hash)
+    {
+        var candidate=ReadCandidate(path);if(candidate.Data==null)throw new InvalidDataException("无法读取导出数据："+candidate.Error);
+        var record=candidate.Data.versions.FirstOrDefault(v=>String.Equals(v.sourceHash,hash,StringComparison.OrdinalIgnoreCase));
+        if(record==null)throw new InvalidDataException("数据文件中没有与原 PDF SHA-256 对应的记录。");return record;
+    }
     internal static void WriteDurable(string path,byte[] bytes)
     {
         using(var stream=new FileStream(path,FileMode.Create,FileAccess.Write,FileShare.None,65536,FileOptions.WriteThrough)){stream.Write(bytes,0,bytes.Length);stream.Flush(true);}
