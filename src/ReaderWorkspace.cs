@@ -35,6 +35,8 @@ internal sealed partial class PdfReaderForm
     }
     private void BindSession(DocumentSession s)
     {
+        s.DraftHandler=delegate{UpdateTabTitle(s);ShowSaveState(s);};
+        s.Viewer.AnnotationDraftStateChanged+=s.DraftHandler;
         s.AnnotationHandler = delegate { MarkDirty(s); SaveSession(s); SyncAnnotationControls(); };
         s.SelectionHandler = delegate { if(ActiveSession==s)SyncAnnotationControls(); };
         s.EditHandler = delegate(object sender,AnnotationEditEventArgs e) { e.Cancel=!EditAnnotationProperties(s,e.Annotation); };
@@ -51,6 +53,7 @@ internal sealed partial class PdfReaderForm
     private void UnbindSession(DocumentSession s)
     {
         s.Viewer.AnnotationsChanged -= s.AnnotationHandler;
+        s.Viewer.AnnotationDraftStateChanged-=s.DraftHandler;
         s.Viewer.AnnotationSelectionChanged -= s.SelectionHandler;
         s.Viewer.AnnotationEditRequested -= s.EditHandler;
         s.Viewer.ActivePageChanged -= s.PageHandler;

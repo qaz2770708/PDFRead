@@ -7,6 +7,7 @@ internal sealed partial class PdfReaderForm
 {
     private bool syncingAnnotationTools;
     private readonly ToolStripButton annotationProperties=new ToolStripButton("属性 F2");
+    private readonly ToolStripButton stickyButton=new ToolStripButton("便签");
     private readonly ToolStripButton annotationDelete=new ToolStripButton("删除 Del");
     private readonly ToolStripButton annotationUndo=new ToolStripButton("撤销");
     private readonly ToolStripButton annotationRedo=new ToolStripButton("重做");
@@ -31,7 +32,8 @@ internal sealed partial class PdfReaderForm
             item.Click+=delegate{SetActiveAnnotationTool(tool);};annotationStrip.Items.Add(item);annotationItems[tool]=item;
         }
         annotationEditStrip.Items.Clear();
-        foreach(var button in new[]{annotationProperties,annotationDelete}){button.AutoSize=false;button.Size=new Size(73,28);annotationEditStrip.Items.Add(button);}
+        foreach(var button in new[]{stickyButton,annotationProperties,annotationDelete}){button.AutoSize=false;button.Size=new Size(48,28);annotationEditStrip.Items.Add(button);}
+        SetActionIcon(stickyButton,"sticky","添加页面便签 (Ctrl+Shift+N)");stickyButton.Click+=delegate{SetActiveAnnotationTool(AnnotationTool.Sticky);};
         SetActionIcon(annotationProperties,"properties","快速样式；F2 打开专业属性");SetActionIcon(annotationDelete,"delete","删除所选注释 (Delete)");
         annotationProperties.Click+=delegate{ActiveSession?.Viewer.ShowInlineSelection();};annotationDelete.Click+=delegate{var v=ActiveSession?.Viewer;if(v!=null){v.FinishInlineEditing();v.AnnotationLayer.DeleteSelected();}};
         foreach(var button in new[]{annotationUndo,annotationRedo}){button.AutoSize=false;button.Size=new Size(47,28);historyStrip.Items.Add(button);}
@@ -44,7 +46,7 @@ internal sealed partial class PdfReaderForm
     private void SetActiveAnnotationTool(AnnotationTool tool){var s=ActiveSession;if(s==null)return;s.Viewer.SetAnnotationTool(tool);s.Viewer.Focus();SyncAnnotationControls();}
     private void SyncAnnotationControls()
     {
-        var layer=ActiveSession?.Viewer.AnnotationLayer;syncingAnnotationTools=true;
+        var layer=ActiveSession?.Viewer.AnnotationLayer;stickyButton.Enabled=layer!=null;stickyButton.Checked=layer!=null && layer.Tool==AnnotationTool.Sticky;syncingAnnotationTools=true;
         try
         {
             foreach(var pair in annotationItems){pair.Value.Enabled=layer!=null;pair.Value.Checked=layer!=null && pair.Key==layer.Tool;}
@@ -62,6 +64,7 @@ internal sealed partial class PdfReaderForm
     private bool HandleAnnotationShortcut(DocumentSession s,Keys key)
     {
         AnnotationTool? tool=null;
+        if(key==(Keys.Control|Keys.Shift|Keys.N)){SetActiveAnnotationTool(AnnotationTool.Sticky);return true;}
         switch(key)
         {
             case Keys.Control|Keys.Shift|Keys.A:tool=AnnotationTool.Select;break;
@@ -88,7 +91,7 @@ internal sealed partial class PdfReaderForm
             var table=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=8,Padding=new Padding(12)};
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,100));table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
             Action<string,Control> row=(label,control)=>{table.Controls.Add(new Label{Text=label,AutoSize=true,Anchor=AnchorStyles.Left});control.Dock=DockStyle.Fill;table.Controls.Add(control);};
-            string friendly=annotation.type=="area_highlight"?"高亮":annotation.type=="underline"?"下划线":annotation.type=="text_note"?"文本批注":annotation.type=="ink"?"手写":annotation.type=="ellipse"?"椭圆":annotation.type=="line"?"直线":"矩形";
+            string friendly=annotation.type=="area_highlight"?"高亮":annotation.type=="underline"?"下划线":annotation.type=="text_note"?"文本批注":annotation.type=="sticky_note"?"便签":annotation.type=="ink"?"手写":annotation.type=="ellipse"?"椭圆":annotation.type=="line"?"直线":"矩形";
             row("类型",new Label{Text=friendly,AutoSize=true});
             var page=new NumericUpDown{Minimum=1,Maximum=session.PageCount,Value=Math.Max(1,Math.Min(session.PageCount,annotation.pageIndex+1))};row("所在页",page);
             var text=new TextBox{Multiline=true,ScrollBars=ScrollBars.Vertical,MaxLength=10000,Text=annotation.text??"",Height=115};row("批注文本",text);table.RowStyles.Add(new RowStyle(SizeType.Absolute,28));table.RowStyles.Add(new RowStyle(SizeType.Absolute,30));table.RowStyles.Add(new RowStyle(SizeType.Absolute,120));

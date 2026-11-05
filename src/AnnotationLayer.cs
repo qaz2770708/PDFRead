@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Web.Script.Serialization;
 
-internal enum AnnotationTool { Select, Highlight, Underline, Text, Ink, Rectangle, Ellipse, Line }
+internal enum AnnotationTool { Select, Highlight, Underline, Text, Ink, Rectangle, Ellipse, Line, Sticky }
 internal sealed class AnnotationEditEventArgs : EventArgs
 {
     public AreaHighlight Annotation;
@@ -44,7 +44,7 @@ internal sealed class AnnotationLayer
     private static PointF Clamp(PointF p) { return new PointF(Math.Max(0,Math.Min(1,p.X)),Math.Max(0,Math.Min(1,p.Y))); }
     private static RectangleF Box(PointF a,PointF b) { return RectangleF.FromLTRB(Math.Min(a.X,b.X),Math.Min(a.Y,b.Y),Math.Max(a.X,b.X),Math.Max(a.Y,b.Y)); }
     private static PointF[] Corners(RectangleF b) { return new[]{new PointF(b.Left,b.Top),new PointF(b.Right,b.Top),new PointF(b.Right,b.Bottom),new PointF(b.Left,b.Bottom)}; }
-    private static string TypeFor(AnnotationTool t) { return t==AnnotationTool.Highlight?"area_highlight":t==AnnotationTool.Text?"text_note":t.ToString().ToLowerInvariant(); }
+    private static string TypeFor(AnnotationTool t) { return t==AnnotationTool.Highlight?"area_highlight":t==AnnotationTool.Text?"text_note":t==AnnotationTool.Sticky?"sticky_note":t.ToString().ToLowerInvariant(); }
     public AreaHighlight HitTest(int index,PointF p,float tx,float ty)
     {
         for(int i=marks.Count-1;i>=0;i--)
@@ -127,7 +127,7 @@ internal sealed class AnnotationLayer
         }
         var item=preview;preview=null;
         if(item==null)return;
-        if(Tool==AnnotationTool.Text && item.width<.004 && item.height<.004)
+        if((Tool==AnnotationTool.Text || Tool==AnnotationTool.Sticky) && item.width<.004 && item.height<.004)
             SetBounds(item,new RectangleF(Math.Min(start.X,.76f),Math.Min(start.Y,.92f),.22f,.07f));
         if(Tool!=AnnotationTool.Ink && Tool!=AnnotationTool.Line && (item.width<.002 || item.height<.002)){before=null;return;}
         if(item.type=="area_highlight" || item.type=="underline")
@@ -140,9 +140,9 @@ internal sealed class AnnotationLayer
                 SetBounds(item,union);
             }
         }
-        if(item.type=="text_note")
+        if(item.type=="text_note" || item.type=="sticky_note")
         {
-            item.text=String.Empty;item.fontFamily="SimSun";before=null;Tool=AnnotationTool.Select;
+            item.text=String.Empty;item.fontFamily=item.type=="sticky_note"?"Microsoft YaHei UI":"SimSun";before=null;Tool=AnnotationTool.Select;
             SelectionChanged?.Invoke(this,EventArgs.Empty);TextDraftCreated?.Invoke(this,item);return;
         }
         marks.Add(item);Selected=item;Commit(before);before=null;
@@ -166,13 +166,14 @@ internal sealed class AnnotationLayer
     {
         if(Selected==null)return;var prior=Copy(marks);Selected.text=text;Selected.color=color;Selected.opacity=Math.Max(0,Math.Min(1,opacity));Selected.strokeWidth=Math.Max(.5f,Math.Min(20,width));Selected.fontSize=Math.Max(6,Math.Min(72,font));Commit(prior);
     }
+    private static bool EmptyText(AreaHighlight value){return String.IsNullOrWhiteSpace(value.text) && (value.type!="sticky_note" || String.IsNullOrWhiteSpace(value.subtitle));}
     public void ApplyInline(AreaHighlight value)
     {
         var existing=Find(value.id);
-        if(existing==null && value.type=="text_note" && String.IsNullOrWhiteSpace(value.text))return;
+        if(existing==null && (value.type=="text_note" || value.type=="sticky_note") && EmptyText(value))return;
         if(existing!=null && Json.Serialize(existing)==Json.Serialize(value))return;
         var prior=Copy(marks);
-        if(value.type=="text_note" && String.IsNullOrWhiteSpace(value.text))
+        if((value.type=="text_note" || value.type=="sticky_note") && EmptyText(value))
         {if(existing!=null)marks.Remove(existing);Selected=null;}
         else
         {
@@ -247,10 +248,10 @@ internal sealed class AnnotationLayer
                 if(m.points!=null && m.points.Count>1)g.DrawLines(pen,m.points.Select(point).ToArray());
                 else g.FillEllipse(fill,b.X,b.Y,Math.Max(2,pen.Width),Math.Max(2,pen.Width));
             }
-            else if(m.type=="text_note")
+            else if(m.type=="text_note" || m.type=="sticky_note")
             {
                 using(var bg=new SolidBrush(Color.FromArgb((int)(35*Math.Max(0,Math.Min(1,m.opacity))),baseColor)))g.FillRectangle(bg,b);g.DrawRectangle(pen,b.X,b.Y,b.Width,b.Height);
-                using(var font=new Font(m.fontFamily??"SimSun",Math.Max(6,Math.Min(72,m.fontSize))*zoom))g.DrawString(m.text??"",font,fill,b);
+                using(var font=new Font(m.fontFamily??"SimSun",Math.Max(6,Math.Min(72,m.fontSize))*zoom))g.DrawString((m.text??"")+(m.type=="sticky_note" && !String.IsNullOrEmpty(m.subtitle)?"\n— "+m.subtitle:""),font,fill,b);
             }
             else if(m.type=="ellipse")g.DrawEllipse(pen,b);
             else g.DrawRectangle(pen,b.X,b.Y,b.Width,b.Height);

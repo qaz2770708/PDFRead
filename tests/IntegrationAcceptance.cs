@@ -33,7 +33,7 @@ internal static class IntegrationAcceptance
             legacy.versions.Add(new VersionRecord {sourceHash=DocumentDataRepository.CalculateSha256(other),pageCount=4,zoom=1f});
             File.WriteAllText(Path.ChangeExtension(other,".pdfdata"),new JavaScriptSerializer().Serialize(legacy));
             var migrated=DocumentDataRepository.LoadForPdf(other,DocumentDataRepository.CalculateSha256(other),4,null,(a,b)=>DialogResult.Yes);
-            Check(migrated.NeedsSave && migrated.Data.formatVersion==5 && migrated.Record.bookmarks.Count==0,"v2 to v5 migration");
+            Check(migrated.NeedsSave && migrated.Data.formatVersion==6 && migrated.Record.bookmarks.Count==0,"v2 to v6 migration");
         }
         catch(Exception e) { Console.WriteLine(e);return 1; }
         var form=new PdfReaderForm(new[]{path,other});

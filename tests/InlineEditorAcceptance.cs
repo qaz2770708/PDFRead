@@ -18,7 +18,7 @@ internal static class InlineEditorAcceptance
   string currentRoot=DocumentDataRepository.DataRootOverride;DocumentDataRepository.DataRootOverride=Path.Combine(folder,"upgrade-check");Directory.CreateDirectory(DocumentDataRepository.DataRootOverride);
   var legacy=new SidecarFile{formatVersion=4};legacy.versions.Add(new VersionRecord{sourceHash=hash,pageCount=4,lastPage=1,zoom=1.1f,annotations=new List<AreaHighlight>{new AreaHighlight{id="old-text",type="text_note",text="旧文字",width=.2,height=.1}}});
   string json=new JavaScriptSerializer().Serialize(legacy).Replace(",\"fontFamily\":\"Microsoft YaHei UI\"","");File.WriteAllText(DocumentDataRepository.GetDataPath(hash),json);
-  var upgraded=DocumentDataRepository.LoadForPdf(pdf,hash,4,null);Check(upgraded.NeedsSave && upgraded.Data.formatVersion==5 && upgraded.Record.lastPage==1 && upgraded.Record.annotations[0].fontFamily=="Microsoft YaHei UI","v4 upgrade retains text appearance and reading progress");
+  var upgraded=DocumentDataRepository.LoadForPdf(pdf,hash,4,null);Check(upgraded.NeedsSave && upgraded.Data.formatVersion==6 && upgraded.Record.lastPage==1 && upgraded.Record.annotations[0].fontFamily=="Microsoft YaHei UI","v4 upgrade retains text appearance and reading progress");
   DocumentDataRepository.DataRootOverride=currentRoot;
   var context=new ReaderApplicationContext(new[]{pdf});var form=context.Windows[0];var timer=new Timer{Interval=1000};int stage=0;string id=null;RectangleF expected=RectangleF.Empty;
   timer.Tick+=delegate
@@ -48,7 +48,7 @@ internal static class InlineEditorAcceptance
     {
      Check(Disk(s,id)?.text.Contains("第二行")==true,"debounced Chinese multiline text persisted");
      edit.Input.Text="中文批注，可直接编辑\r\n第二行内容·新输入";v.ShowInlineSelection();Check(edit.Input.Text.EndsWith("新输入"),"reopening quick style preserves pending text instead of stale selection");
-     Check(edit.ColorButtons.Count==6 && !edit.StylePanel.Controls.OfType<TextBox>().Any(),"six quick color circles and no custom color entry");
+     Check(edit.ColorButtons.Count==6 && !edit.StylePanel.Controls.OfType<TextBox>().Any(t=>t.Visible),"six quick color circles and no custom color entry");
      edit.ColorButtons[4].PerformClick();Check(edit.Input.ForeColor.ToArgb()==ColorTranslator.FromHtml("#2878D7").ToArgb() && edit.Draft.color=="#2878D7","color circle updates text color and color code");
      var values=edit.StylePanel.Controls.OfType<Label>().Select(l=>l.Text);Check(values.Contains("#2878D7"),"selected hex code displayed");
      edit.SizeSlider.Value=18;edit.TransparencySlider.Value=35;

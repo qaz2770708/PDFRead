@@ -66,6 +66,7 @@ internal sealed partial class PdfReaderForm : Form
         Controls.Add(toolStrip);
         InitializeReadingTools();
         InitializeAnnotationTools();
+        InitializeDataTools();
         InitializeDocumentTabs();
 
         openButton.Click += delegate { ShowOpenDialog(); };
@@ -73,7 +74,7 @@ internal sealed partial class PdfReaderForm : Form
         nextButton.Click += delegate { NavigateActive(1); };
         zoomOutButton.Click += delegate { ChangeActiveZoom(-0.1f); };
         zoomInButton.Click += delegate { ChangeActiveZoom(0.1f); };
-        saveButton.Click += delegate { DocumentSession session = ActiveSession; if (session != null) SaveSession(session); };
+        saveButton.Click += delegate { DocumentSession session = ActiveSession; if (session != null) SaveSessionWithPrompt(session,true); };
         highlightButton.CheckedChanged += HighlightModeChanged;
         pageBox.KeyDown += PageBoxKeyDown;
         documentTabs.SelectedIndexChanged += SelectedTabChanged;
@@ -102,7 +103,8 @@ internal sealed partial class PdfReaderForm : Form
             case Keys.Control | Keys.O: ShowOpenDialog(); return true;
             case Keys.F1: ShowShortcutHelp(); return true;
             case Keys.Control | Keys.W: CloseSelectedTab(); return true;
-            case Keys.Control | Keys.S: if (s != null) SaveSession(s); return true;
+            case Keys.Control | Keys.S: if (s != null) SaveSessionWithPrompt(s,true); return true;
+            case Keys.Control | Keys.Shift | Keys.S: SaveDataElsewhere(s,true); return true;
             case Keys.Control | Keys.Tab:
             case Keys.Control | Keys.Shift | Keys.Tab:
                 if (documentTabs.TabCount > 0) documentTabs.SelectedIndex = (documentTabs.SelectedIndex +
@@ -139,7 +141,7 @@ internal sealed partial class PdfReaderForm : Form
 
     private void ShowShortcutHelp()
     {
-        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+A 选择/移动；Ctrl+Shift+H 高亮\r\nCtrl+Shift+U 下划线；Ctrl+Shift+T 文本批注\r\nCtrl+Shift+P 手写；Ctrl+Shift+R 矩形\r\nCtrl+Shift+E 椭圆；Ctrl+Shift+L 直线\r\n文本框内直接输入；Ctrl+Enter 完成；Esc 取消待保存编辑\r\nF2 专业属性；Delete 删除；Ctrl+Z/Y 撤销/重做\r\nCtrl+D 添加用户书签；Ctrl+B 显示/隐藏导航栏\r\n书签树中 F2 重命名，Delete 删除，Enter 跳转\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据；Ctrl+Shift+S 另存数据\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+A 选择/移动；Ctrl+Shift+H 高亮\r\nCtrl+Shift+U 下划线；Ctrl+Shift+T 文本批注\r\nCtrl+Shift+P 手写；Ctrl+Shift+R 矩形\r\nCtrl+Shift+E 椭圆；Ctrl+Shift+L 直线\r\nCtrl+Shift+N 页面便签（含副文本）\r\n文本框内直接输入；Ctrl+Enter 完成；Esc 取消待保存编辑\r\nF2 专业属性；Delete 删除；Ctrl+Z/Y 撤销/重做\r\nCtrl+D 添加用户书签；Ctrl+B 显示/隐藏导航栏\r\n书签树中 F2 重命名，Delete 删除，Enter 跳转\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void ShowOpenDialog()
@@ -173,7 +175,7 @@ internal sealed partial class PdfReaderForm : Form
             if (sameHash != null)
             {
                 sameHash.KnownPaths.Add(fullPath);
-                if (File.Exists(DocumentDataRepository.GetDataPath(hash))) DocumentDataRepository.RegisterLocation(fullPath, hash);
+                if (!sameHash.DataReadOnly && File.Exists(sameHash.SidecarPath)) DocumentDataRepository.RegisterLocation(fullPath, hash,sameHash.SidecarPath);
                 var owner = hashWindow ?? this;
                 owner.documentTabs.SelectedTab = sameHash.Tab; owner.Activate(); return;
             }
@@ -185,26 +187,29 @@ internal sealed partial class PdfReaderForm : Form
             }
             if (samePath != null)
             {
-                DialogResult reload = MessageBox.Show(this,
-                    "这个路径下的 PDF 内容已改变。关闭旧版本标签并打开当前版本吗？旧版本的数据会保留。",
-                    "PDF 已更新", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (reload != DialogResult.Yes || !CloseSession(samePath)) return;
+                samePath.Viewer.FinishInlineEditing();
+                if(samePath.Dirty && !SaveSessionWithPrompt(samePath,true))return;
             }
 
             object pdf = WindowsPdfRenderer.Open(fullPath, out int count);
-            SidecarLoadResult loaded = DocumentDataRepository.LoadForPdf(fullPath, hash, count, this);
+            SidecarLoadResult loaded = DocumentDataRepository.LoadForPdf(fullPath, hash, count, this,DataPromptOverride);
             if (loaded == null)
             {
                 WindowsPdfRenderer.DisposeDocument(pdf);
                 return;
             }
 
+            if(samePath!=null && !CloseSession(samePath)){WindowsPdfRenderer.DisposeDocument(pdf);return;}
+
             DocumentSession session = new DocumentSession
             {
                 PdfDocument = pdf,
                 PdfPath = fullPath,
                 PdfHash = hash,
-                SidecarPath = DocumentDataRepository.GetDataPath(hash),
+                SidecarPath = loaded.TargetPath,
+                DataReadOnly = loaded.ReadOnly,
+                ExpectedDataHash = loaded.ExpectedDataHash,
+                DataBaselineCaptured = true,
                 PageCount = count,
                 Data = loaded.Data,
                 Record = loaded.Record,
@@ -263,6 +268,7 @@ internal sealed partial class PdfReaderForm : Form
         session.Record.lastPageOffset = e.PageOffset;
         session.Record.zoom = session.Viewer.Zoom;
         session.Record.lastPageHorizontal = session.Viewer.CaptureHorizontalPosition();
+        if (session.DataReadOnly) return;
         if (!session.Dirty) MarkDirty(session);
         pendingProgressSaves.Add(session);
         progressSaveTimer.Stop();
@@ -327,6 +333,7 @@ internal sealed partial class PdfReaderForm : Form
         if (session == null) return;
         session.Viewer.SetZoom(session.Viewer.Zoom + delta);
         session.Record.zoom = session.Viewer.Zoom;
+        if(session.DataReadOnly){zoomLabel.Text=Math.Round(session.Viewer.Zoom*100)+"%";return;}
         MarkDirty(session);
         pendingProgressSaves.Add(session);
         progressSaveTimer.Stop();
@@ -365,48 +372,11 @@ internal sealed partial class PdfReaderForm : Form
         if (ActiveSession == session) SetStatus("未保存", Color.FromArgb(180, 83, 9));
     }
 
-    private bool SaveSession(DocumentSession session)
-    {
-        if (session == null) return true;
-        session.Viewer.FlushInlineEditing();
-        if (!session.Dirty || session.Restoring) return true;
-        int page;
-        double offset;
-        if (session == ActiveSession)
-        {
-            session.Viewer.CaptureReadingPosition(out page, out offset);
-            session.Record.lastPage = page;
-            session.Record.lastPageOffset = offset;
-            session.Record.lastPageHorizontal = session.Viewer.CaptureHorizontalPosition();
-            session.Record.zoom = session.Viewer.Zoom;
-        }
-        session.Record.annotations = session.Annotations.ToList();
-        if (ActiveSession == session) SetStatus("保存中…", Color.FromArgb(52, 64, 84));
-        try
-        {
-            DocumentDataRepository.Save(session);
-            session.Dirty = false;
-            session.ModifiedByRecoveryOrMigration = false;
-            pendingProgressSaves.Remove(session);
-            UpdateTabTitle(session);
-            if (ActiveSession == session) SetStatus("已保存", Color.FromArgb(24, 121, 78));
-            return true;
-        }
-        catch (Exception ex)
-        {
-            UpdateTabTitle(session);
-            if (ActiveSession == session) SetStatus("保存失败", Color.FromArgb(180, 35, 24));
-            MessageBox.Show(this, "无法保存独立数据文件。原 PDF 未被修改，当前修改仍保留在内存中。\r\n\r\n" + Unwrap(ex).Message,
-                "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return false;
-        }
-    }
-
     private void UpdateTabTitle(DocumentSession session)
     {
         if (session.Tab == null) return;
         string name = Path.GetFileName(session.PdfPath);
-        session.Tab.Text = session.Dirty ? name + " *" : name;
+        session.Tab.Text = session.Dirty || session.Viewer.InlineEditor.HasPendingChanges ? name + " *" : name;
     }
 
     private void UpdateToolbar(DocumentSession session)
@@ -420,6 +390,7 @@ internal sealed partial class PdfReaderForm : Form
         zoomInButton.Enabled = open;
         highlightButton.Enabled = open;
         saveButton.Enabled = open;
+        dataButton.Enabled = open;
         if (!open)
         {
             pageBox.Text = String.Empty;
@@ -440,7 +411,7 @@ internal sealed partial class PdfReaderForm : Form
         AccessibleDescription = session.PdfPath;
         SyncAnnotationControls();
         Text = "PDF 阅读器 - " + Path.GetFileName(session.PdfPath);
-        SetStatus(session.Dirty ? "未保存" : "已保存", session.Dirty ? Color.FromArgb(180, 83, 9) : Color.FromArgb(24, 121, 78));
+        ShowSaveState(session);
         previousButton.Enabled = page > 0;
         nextButton.Enabled = page < session.PageCount - 1;
     }
@@ -461,7 +432,7 @@ internal sealed partial class PdfReaderForm : Form
     private bool CloseSession(DocumentSession session)
     {
         session.Viewer.FinishInlineEditing();
-        if (session.Dirty && !SaveSession(session)) return false;
+        if (session.Dirty && !SaveSessionWithPrompt(session,true)) return false;
         UnbindSession(session);
         pendingProgressSaves.Remove(session);
         sessions.Remove(session);
@@ -482,7 +453,7 @@ internal sealed partial class PdfReaderForm : Form
         FlushPendingProgress();
         foreach (DocumentSession session in sessions.ToArray())
         {
-            if (session.Dirty && !SaveSession(session))
+            if (session.Dirty && !SaveSessionWithPrompt(session,true))
             {
                 e.Cancel = true;
                 return;

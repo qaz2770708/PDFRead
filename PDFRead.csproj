@@ -18,6 +18,8 @@
     <Compile Include="src\ContinuousPdfViewer.cs" />
     <Compile Include="src\DocumentData.cs" />
     <Compile Include="src\CentralDataStore.cs" />
+    <Compile Include="src\SafePersistence.cs" />
+    <Compile Include="src\DataTools.cs" />
     <Compile Include="src\AnnotationLayer.cs" />
     <Compile Include="src\AnnotationViewer.cs" />
     <Compile Include="src\AnnotationTools.cs" />

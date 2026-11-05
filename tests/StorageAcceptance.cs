@@ -68,6 +68,7 @@ internal static class M2VerificationProbe
 
             VerifySidecarProgressAndRecovery(pdfPath, beforeHash);
             VerifyHashRecognition(pdfPath);
+            DocumentDataRepository.DataRootOverride=Path.Combine(folder,"legacy-data");
             VerifyLegacyMigration(legacyPath, beforeHash);
             VerifyTabs(pdfPath, copyPath);
             Require(Hash(pdfPath) == beforeHash, "The source PDF changed during verification.");
@@ -85,7 +86,7 @@ internal static class M2VerificationProbe
 
     private static void VerifySidecarProgressAndRecovery(string path, string hash)
     {
-        string sidecar = DocumentDataRepository.GetDataPath(hash);
+        string sidecar = DocumentDataRepository.GetDataPath(hash,path);
         CleanupSidecar(sidecar);
         SidecarLoadResult loaded = DocumentDataRepository.LoadForPdf(path, hash, 3, null);
         Require(loaded != null && loaded.NeedsSave, "A new PDF did not receive an initial data record.");
@@ -110,7 +111,7 @@ internal static class M2VerificationProbe
 
         reopened.Data.revision++;
         reopened.Record.lastPage = 2;
-        File.WriteAllText(sidecar + ".tmp", new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(reopened.Data));
+        File.WriteAllText(sidecar + ".tmp", DocumentDataRepository.SerializeData(reopened.Data));
         SidecarLoadResult recovered = DocumentDataRepository.LoadForPdf(path, hash, 3, null,
             (caption, message) => caption == "恢复未保存数据" ? DialogResult.Yes : DialogResult.Yes);
         Require(recovered.NeedsSave && recovered.Record.lastPage == 2, "A newer complete temporary snapshot was not recovered.");
@@ -127,7 +128,7 @@ internal static class M2VerificationProbe
         SidecarFile newerSnapshot = fromBackup.Data;
         newerSnapshot.revision += 10;
         newerSnapshot.versions.First(v => v.sourceHash == hash).lastPage = 0;
-        File.WriteAllText(sidecar + ".tmp", new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(newerSnapshot));
+        File.WriteAllText(sidecar + ".tmp", DocumentDataRepository.SerializeData(newerSnapshot));
         SidecarLoadResult newest = DocumentDataRepository.LoadForPdf(path, hash, 3, null,
             (caption, message) => DialogResult.Yes);
         Require(newest.Record.lastPage == 0 && File.Exists(sidecar + ".recovered.tmp"),
@@ -144,7 +145,7 @@ internal static class M2VerificationProbe
             "\",\"sourceName\":\"legacy-copy.pdf\",\"pageCount\":3,\"lastPage\":2,\"annotations\":[]}]}";
         File.WriteAllText(sidecar, legacy);
         SidecarLoadResult migrated = DocumentDataRepository.LoadForPdf(path, hash, 3, null);
-        Require(migrated.NeedsSave && migrated.Data.formatVersion == 5, "Version 1 data was not migrated to version 5.");
+        Require(migrated.NeedsSave && migrated.Data.formatVersion == 6, "Version 1 data was not migrated to version 6.");
         Require(Math.Abs(migrated.Record.zoom - 0.82f) < 0.001f && migrated.Record.lastPageOffset == 0,
             "Migration did not populate the new progress defaults.");
         DocumentDataRepository.Save(NewSession(path, hash, migrated));
@@ -155,7 +156,7 @@ internal static class M2VerificationProbe
     private static void VerifyHashRecognition(string sourcePath)
     {
         string versionPath = Path.Combine(Path.GetDirectoryName(sourcePath), "hash-version.pdf");
-        string sidecar = DocumentDataRepository.GetDataPath(Hash(sourcePath));
+        string sidecar = DocumentDataRepository.GetDataPath(Hash(sourcePath),sourcePath);
         CleanupSidecar(sidecar);
         File.Copy(sourcePath, versionPath, true);
         string firstHash = Hash(versionPath);
@@ -167,6 +168,7 @@ internal static class M2VerificationProbe
             color = "#FFFF66", createdUtc = DateTime.UtcNow.ToString("o")
         });
         DocumentDataRepository.Save(NewSession(versionPath, firstHash, first));
+        sidecar=DocumentDataRepository.GetDataPath(firstHash,versionPath);
 
         File.AppendAllText(versionPath, "\n% revision two\n");
         string secondHash = Hash(versionPath);
@@ -209,7 +211,7 @@ internal static class M2VerificationProbe
         {
             PdfPath = path,
             PdfHash = hash,
-            SidecarPath = DocumentDataRepository.GetDataPath(hash),
+            SidecarPath = result.TargetPath,
             PageCount = 3,
             Data = result.Data,
             Record = result.Record,

@@ -10,7 +10,8 @@ internal static class AnnotationIcons
         using(var g=Graphics.FromImage(image))using(var pen=new Pen(Color.FromArgb(39,54,73),2){StartCap=LineCap.Round,EndCap=LineCap.Round})
         {
             g.SmoothingMode=SmoothingMode.AntiAlias;
-            if(name=="properties")
+            if(name=="sticky"){g.FillRectangle(Brushes.LemonChiffon,5,4,23,24);g.DrawRectangle(pen,5,4,23,24);g.DrawLine(pen,9,11,23,11);g.DrawLine(pen,9,17,22,17);g.DrawLine(pen,9,23,17,23);}
+            else if(name=="properties")
             {
                 int[] positions={10,22,15};for(int i=0;i<3;i++){int y=7+i*9;g.DrawLine(pen,4,y,28,y);g.FillEllipse(Brushes.White,positions[i]-3,y-3,6,6);g.DrawEllipse(pen,positions[i]-3,y-3,6,6);}
             }

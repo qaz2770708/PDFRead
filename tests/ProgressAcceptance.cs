@@ -16,7 +16,7 @@ internal static class ProgressAcceptance
   Check(imported.NeedsSave && imported.Record.lastPage==1,"legacy sidecar detected with progress");
   DocumentDataRepository.Save(new DocumentSession{PdfPath=pdf,PdfHash=hash,Data=imported.Data,Record=imported.Record});
   string canonical=DocumentDataRepository.GetDataPath(hash),snapshot=File.ReadAllText(canonical);
-  Check(File.ReadAllText(legacy)==legacyBytes && imported.Data.formatVersion==5,"legacy preserved and data upgraded in root data folder");
+  Check(File.ReadAllText(legacy)==legacyBytes && imported.Data.formatVersion==6,"legacy preserved and data upgraded in root data folder");
   var context=new ReaderApplicationContext(new[]{pdf});var form=context.Windows[0];var timer=new Timer{Interval=1200};int stage=0;
   timer.Tick+=delegate
   {
@@ -26,7 +26,7 @@ internal static class ProgressAcceptance
     if(stage==0)
     {
      Check(page==1 && Math.Abs(offset-.36)<.005 && Math.Abs(s.Viewer.Zoom-1.25)<.001,"actual initial form layout restores saved progress");
-     Check(File.ReadAllText(canonical)==snapshot && Directory.GetFiles(DocumentDataRepository.DataRoot,"*.pdfdata").Length==1,"reopening does not rewrite progress or duplicate data");
+     Check(File.ReadAllText(canonical)==snapshot && Directory.GetFiles(DocumentDataRepository.DataRoot,"*.pdfdata",SearchOption.AllDirectories).Count(p=>!p.Contains("_backups"))==1,"reopening does not rewrite progress or duplicate data");
      var tools=(Form)Field(form,"rightTools");var split=(SplitContainer)Field(form,"navigationSplit");Rectangle area=split.Panel1.RectangleToScreen(split.Panel1.ClientRectangle);
      Check(Math.Abs(tools.Height-area.Height*.8)<2 && Math.Abs(tools.Top-area.Top-area.Height*.1)<2,"tools occupy eighty percent height with ten percent top and bottom margins");
      var groups=(List<ToolStripControlHost>)Field(form,"toolGroups");var centers=groups.Select(g=>g.Control.PointToScreen(new Point(0,g.Control.Height/2)).Y).ToArray();
@@ -38,7 +38,7 @@ internal static class ProgressAcceptance
     Check(page==2 && Math.Abs(offset-.15)<.005 && Math.Abs(s.Viewer.Zoom-1.4)<.001,"closing and reopening restores latest reading page offset and zoom");
     string alias=Path.Combine(folder,"renamed.pdf");File.Copy(pdf,alias);
     var aliased=DocumentDataRepository.LoadForPdf(alias,hash,4,null,(a,b)=>throw new Exception("same hash should not prompt"));
-    Check(aliased.Record.lastPage==2 && Directory.GetFiles(DocumentDataRepository.DataRoot,"*.pdfdata").Length==1,"renamed or copied PDF reuses hash data file");
+    Check(aliased.Record.lastPage==2 && Directory.GetFiles(DocumentDataRepository.DataRoot,"*.pdfdata",SearchOption.AllDirectories).Count(p=>!p.Contains("_backups"))==1,"renamed or copied PDF reuses hash data file");
     File.AppendAllText(alias,"\n% changed version\n");string changed=DocumentDataRepository.CalculateSha256(alias);int prompts=0;
     var next=DocumentDataRepository.LoadForPdf(alias,changed,4,null,(a,b)=>{prompts++;return DialogResult.Yes;});
     Check(prompts==1 && next.Record.sourceHash==changed && next.Data.versions.Count==2,"modified PDF prompts and keeps previous version");

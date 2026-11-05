@@ -40,6 +40,9 @@ internal sealed class InlineTextEditor : IDisposable
     private readonly Label caption=new Label{Text="拖动 · 文本批注",BackColor=Color.White,ForeColor=Color.SlateGray,Cursor=Cursors.SizeAll,Height=19,AutoSize=false,Visible=false};
     internal readonly Panel StylePanel=new Panel{Size=new Size(338,152),BackColor=Color.White,BorderStyle=BorderStyle.FixedSingle,Visible=false};
     internal readonly NoteInputBox Input=new NoteInputBox();
+    internal readonly TextBox Subtitle=new TextBox{MaxLength=1000};
+    private readonly Label subtitleLabel=new Label{Text="副文本",AutoSize=false};
+    private readonly List<Button> actionButtons=new List<Button>();
     internal readonly TrackBar SizeSlider=new TrackBar{AutoSize=false,TickStyle=TickStyle.None,SmallChange=1,LargeChange=5};
     internal readonly TrackBar TransparencySlider=new TrackBar{Minimum=0,Maximum=100,AutoSize=false,TickStyle=TickStyle.None,SmallChange=1,LargeChange=10};
     internal readonly List<ColorChoiceButton> ColorButtons=new List<ColorChoiceButton>();
@@ -54,9 +57,10 @@ internal sealed class InlineTextEditor : IDisposable
     private Font inputFont;
     private AreaHighlight draft;
     public bool IsOpen {get{return draft!=null;}}
-    public bool TextFocused {get{return IsOpen && Input.ContainsFocus;}}
+    public bool TextFocused {get{return IsOpen && (Input.ContainsFocus || Subtitle.ContainsFocus);}}
+    public bool HasPendingChanges {get{return dirty;}}
     internal AreaHighlight Draft {get{return draft;}}
-    private bool IsText {get{return draft!=null && draft.type=="text_note";}}
+    private bool IsText {get{return draft!=null && (draft.type=="text_note" || draft.type=="sticky_note");}}
     private static T Copy<T>(T value){return Json.Deserialize<T>(Json.Serialize(value));}
     private static Color Parse(string value){try{return ColorTranslator.FromHtml(value??"#2878D7");}catch{return Color.RoyalBlue;}}
     private static string Hex(Color value){return String.Format("#{0:X2}{1:X2}{2:X2}",value.R,value.G,value.B);}
@@ -92,7 +96,9 @@ internal sealed class InlineTextEditor : IDisposable
         var remove=new Button{Text="删除",Location=new Point(85,113),Size=new Size(69,28)};
         var advanced=new Button{Text="专业属性 F2",Location=new Point(206,113),Size=new Size(119,28)};
         done.Click+=delegate{Finish();viewer.Focus();};remove.Click+=delegate{Delete();};advanced.Click+=delegate{Professional();};
-        StylePanel.Controls.AddRange(new Control[]{done,remove,advanced});
+        StylePanel.Controls.AddRange(new Control[]{done,remove,advanced});actionButtons.AddRange(new[]{done,remove,advanced});
+        subtitleLabel.SetBounds(8,115,49,26);Subtitle.SetBounds(61,113,263,26);StylePanel.Controls.AddRange(new Control[]{subtitleLabel,Subtitle});
+        Subtitle.TextChanged+=delegate{if(!suppress && IsOpen && draft.type=="sticky_note"){draft.subtitle=Subtitle.Text;Changed();}};
         saveTimer.Tick+=delegate{if(!dragging)Flush();};
         WireDrag(caption,false);WireDrag(grip,true);
     }
@@ -111,6 +117,10 @@ internal sealed class InlineTextEditor : IDisposable
         try
         {
             Input.Text=draft.text??"";Input.Visible=IsText;
+            bool sticky=draft.type=="sticky_note";caption.Text=sticky?"拖动 · 便签":"拖动 · 文本批注";
+            Subtitle.Text=draft.subtitle??"";Subtitle.Visible=subtitleLabel.Visible=sticky;
+            foreach(var button in actionButtons)button.Top=sticky?147:113;
+            StylePanel.Height=sticky?186:152;
             SizeSlider.Minimum=IsText?6:5;SizeSlider.Maximum=IsText?72:200;
             SizeSlider.Value=Math.Max(SizeSlider.Minimum,Math.Min(SizeSlider.Maximum,(int)Math.Round(IsText?draft.fontSize:draft.strokeWidth*10)));
             TransparencySlider.Value=Math.Max(0,Math.Min(100,(int)Math.Round((1-draft.opacity)*100)));
@@ -136,7 +146,7 @@ internal sealed class InlineTextEditor : IDisposable
         if(inputFont==null || Math.Abs(inputFont.SizeInPoints-points)>.01f || inputFont.FontFamily.Name!=family)
         {var next=new Font(family,points);Input.Font=next;inputFont?.Dispose();inputFont=next;}
     }
-    private void Changed(){dirty=true;viewer.AnnotationLayer.SetInlinePreview(draft);viewer.Invalidate();saveTimer.Stop();saveTimer.Start();}
+    private void Changed(){dirty=true;viewer.AnnotationLayer.SetInlinePreview(draft);viewer.Invalidate();saveTimer.Stop();saveTimer.Start();viewer.NotifyDraftState();}
     public void Flush()
     {
         saveTimer.Stop();if(!IsOpen || !dirty || dragging || flushing)return;flushing=true;
@@ -144,7 +154,7 @@ internal sealed class InlineTextEditor : IDisposable
         {
             viewer.AnnotationLayer.ApplyInline(draft);
             var saved=viewer.AnnotationLayer.Find(draft.id);if(saved!=null)draft=Copy(saved);
-            dirty=false;viewer.AnnotationLayer.SetInlinePreview(draft);
+            dirty=false;viewer.AnnotationLayer.SetInlinePreview(draft);viewer.NotifyDraftState();
         }
         finally{flushing=false;}
         viewer.Invalidate();
@@ -153,7 +163,7 @@ internal sealed class InlineTextEditor : IDisposable
     public void Cancel(){if(!IsOpen)return;dragging=false;caption.Capture=grip.Capture=false;CloseOverlay();viewer.Focus();}
     private void CloseOverlay()
     {
-        saveTimer.Stop();draft=null;dirty=false;frame.Hide();caption.Hide();StylePanel.Hide();viewer.AnnotationLayer.SetInlinePreview(null);viewer.Invalidate();
+        saveTimer.Stop();draft=null;dirty=false;frame.Hide();caption.Hide();StylePanel.Hide();viewer.AnnotationLayer.SetInlinePreview(null);viewer.Invalidate();viewer.NotifyDraftState();
     }
     public void MarksChanged()
     {
@@ -191,7 +201,7 @@ internal sealed class InlineTextEditor : IDisposable
             frame.Visible=caption.Visible=visible && IsText;StylePanel.Visible=visible;
             if(!visible)return;
             frame.Bounds=rect;caption.SetBounds(rect.Left,rect.Top>=20?rect.Top-20:rect.Bottom+2,Math.Min(130,Math.Max(85,rect.Width)),19);
-            int width=Math.Min(338,viewer.ClientSize.Width-8),height=152;
+            int width=Math.Min(338,viewer.ClientSize.Width-8),height=draft.type=="sticky_note"?186:152;
             int left=Math.Max(4,Math.Min(viewer.ClientSize.Width-width-4,rect.Left));
             int top=rect.Bottom+5;if(top+height>viewer.ClientSize.Height-4)top=rect.Top-height-5;
             top=Math.Max(4,Math.Min(viewer.ClientSize.Height-height-4,top));StylePanel.SetBounds(left,top,width,height);

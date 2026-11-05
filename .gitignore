@@ -10,3 +10,5 @@ data/
 *.pdfdata.recovered.tmp
 PDFReader-error.log
 PDFReader-debug.log
+
+*.pdfdata.*

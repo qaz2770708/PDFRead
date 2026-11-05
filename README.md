@@ -1,6 +1,6 @@
 # PDFRead
 
-Windows 桌面 PDF 阅读器。PDF 页面由 Windows PDF API 只读渲染，注释层独立绘制，阅读进度、书签和注释保存于 **EXE 根目录的 data 文件夹**，原 PDF 不修改。
+Windows 桌面 PDF 阅读器。PDF 页面由 Windows PDF API 只读渲染，注释层独立绘制，阅读进度、书签、注释和便签保存于 **EXE 根目录的 data 文件夹**，原 PDF 不修改。
 
 ## 当前功能
 
@@ -11,25 +11,26 @@ Windows 桌面 PDF 阅读器。PDF 页面由 Windows PDF API 只读渲染，注�
 - 页内快捷面板提供 6 色圆点、色号显示、字号/线宽和透明度滑条及加减按钮；批注可直接输入、修改、清空删除，F2 保留专业属性弹窗。
 - 高亮、下划线、文本批注、手写、矩形、椭圆、直线：均可新增、选择、修改属性、移动、缩放、删除；支持最多 30 步注释撤销/重做。
 - 高亮和下划线保存所选文字区域的四边形；扫描页或文本解析失败时采用区域标注。手写保存笔迹点列，所有坐标均相对页面，与屏幕像素无关。
-- 相同 PDF 内容复用 data/<sha256>.pdfdata，重开恢复页码、页内位置和缩放，不再为相同内容新建文件。原路径内容改变时询问新建或沿用旧版本数据。
-- 自动导入 PDF 旁边的旧版数据，保留旧文件；后续仅写集中目录。格式 v1/v2/v3/v4 升级为 v5，保留进度、书签、注释。原子保存、固定备份和崩溃恢复沿用既有规则。
+- 相同 PDF 内容复用 data/<sha256>/报告.pdfdata，重开恢复页码、页内位置和缩放，不再为相同内容新建文件。PDF 内容变化时提供新建记录、沿用旧注释、不加载数据、取消四种选择。
+- 自动导入 PDF 旁边的旧版数据，保留旧文件；后续仅写集中目录。格式 v1～v5 先保留原始备份再升级为 v6，保留进度、书签和注释；v6 增加数据完整性校验。保存失败可重试或另存，内存修改保留。完整临时文件与有效备份可询问恢复，外部改动会阻止覆盖。
 
-便签、导出带注释 PDF 和 OCR 尚未开发。
+便签支持正文、副文本、颜色、位置与大小编辑，Ctrl+Shift+N 或右栏便签图标创建；数据菜单提供加载、导出、另存和重试。导出带注释 PDF 和 OCR 尚未开发。
 
 ## 构建与运行
 
-安装 .NET SDK 和 .NET Framework 4.8 targeting pack 后运行 `./build.ps1`。若旧程序占用默认构建文件，可用 `./build.ps1 -BuildOutputPath work/release-m41` 构建到隔离目录。首次构建需要 NuGet 还原依赖。
+安装 .NET SDK 和 .NET Framework 4.8 targeting pack 后运行 `./build.ps1`。若旧程序占用默认构建文件，可用 `./build.ps1 -BuildOutputPath work/release-m5` 构建到隔离目录。首次构建需要 NuGet 还原依赖。
 
-运行 outputs/PDFReader.exe，保留所有 DLL 和配置文件。`./package.ps1` 生成 outputs/PDFReader-M4.1.zip，`-NoBuild` 仅打包已有 outputs 发行文件。data 必须可写；程序不会回退到 PDF 所在目录生成数据文件。迁移电脑时复制整个 data 目录及 PDF。
+运行 outputs/PDFReader.exe，保留所有 DLL 和配置文件。`./package.ps1` 生成 outputs/PDFReader-M5.zip，`-NoBuild` 仅打包已有 outputs 发行文件。data 必须可写；程序不会回退到 PDF 所在目录生成数据文件。迁移电脑时复制整个 data 目录及 PDF，或从“数据 → 导出”生成同名 .pdfdata，与 PDF 一起复制到目标电脑后打开 PDF。
 
 ## 验证与文档
 
-运行 `./test.ps1` 执行六组 Windows 集成验收；依赖已还原时可加 `-NoRestore`。测试只写工作区中独立生成的样例副本。
+运行 `./test.ps1` 执行八组 Windows 集成验收；依赖已还原时可加 `-NoRestore`。测试只写工作区中独立生成的样例副本。
 
+- [第五步验收](docs/M5-validation.md)
 - [集中数据与迁移规则](docs/data-storage.md)
 - [快捷键](docs/shortcuts.md)
 - [第四步验收及边界](docs/M4-validation.md)
 - [图标与页内编辑验收](docs/M4.1-validation.md)
 - [第三方许可](docs/THIRD-PARTY-NOTICES.md)
 
-渲染使用 Windows PDF API；目录/内部链接由 PDFsharp-GDI 6.2.4（MIT）解析，文字位置由 PdfPig 0.1.16（Apache-2.0）解析，均不调用 PDF 写入接口。docs 内 M2/M3/UI-validation 为历史里程碑记录，当前行为以本文件、M4-validation 和 M4.1-validation 为准。
+渲染使用 Windows PDF API；目录/内部链接由 PDFsharp-GDI 6.2.4（MIT）解析，文字位置由 PdfPig 0.1.16（Apache-2.0）解析，均不调用 PDF 写入接口。docs 内 M2/M3/UI-validation 为历史里程碑记录，当前行为以本文件、data-storage 和 M5-validation 为准。

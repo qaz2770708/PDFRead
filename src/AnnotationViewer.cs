@@ -14,6 +14,8 @@ internal sealed partial class ContinuousPdfViewer
     internal void FlushInlineEditing(){InlineEditor?.Flush();}
     internal void FinishInlineEditing(){InlineEditor?.Finish();}
     public event EventHandler AnnotationsChanged;
+    internal event EventHandler AnnotationDraftStateChanged;
+    internal void NotifyDraftState(){AnnotationDraftStateChanged?.Invoke(this,EventArgs.Empty);}
     public event EventHandler AnnotationSelectionChanged;
     public event EventHandler<AnnotationEditEventArgs> AnnotationEditRequested;
     private void InitializeAnnotationLayer()
@@ -51,7 +53,7 @@ internal sealed partial class ContinuousPdfViewer
         FinishInlineEditing();
         var selected=AnnotationLayer.Selected;if(selected==null)return;
         if(!AnnotationClientBounds(selected).IntersectsWith(ClientRectangle))GoToLocation(selected.pageIndex,selected.y,selected.x);
-        InlineEditor.Begin(selected,selected.type=="text_note");
+        InlineEditor.Begin(selected,selected.type=="text_note" || selected.type=="sticky_note");
     }
     internal bool RequestAnnotationProperties(AreaHighlight value){var args=new AnnotationEditEventArgs{Annotation=value};AnnotationEditRequested?.Invoke(this,args);return !args.Cancel;}
     private PointF NormalizedPoint(int page,Point client)
