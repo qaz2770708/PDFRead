@@ -39,6 +39,7 @@ internal sealed class PdfReaderForm : Form
     private readonly Timer progressSaveTimer = new Timer { Interval = 800 };
     private readonly string[] initialPaths;
     private bool isClosing;
+    private readonly ToolStripButton helpButton = new ToolStripButton("快捷键 F1");
 
     public PdfReaderForm(string[] args)
     {
@@ -65,6 +66,15 @@ internal sealed class PdfReaderForm : Form
         toolStrip.Items.Add(new ToolStripSeparator());
         toolStrip.Items.Add(highlightButton);
         toolStrip.Items.Add(saveButton);
+        toolStrip.Items.Add(helpButton);
+        openButton.ToolTipText = "打开 PDF (Ctrl+O)";
+        closeButton.ToolTipText = "关闭标签 (Ctrl+W)";
+        saveButton.ToolTipText = "保存数据 (Ctrl+S)";
+        zoomInButton.ToolTipText = "放大 (Ctrl++ / Ctrl+滚轮)";
+        zoomOutButton.ToolTipText = "缩小 (Ctrl+- / Ctrl+滚轮)";
+        highlightButton.ToolTipText = "区域高亮 (Ctrl+Shift+H)，Esc 返回阅读";
+        pageBox.ToolTipText = "跳转到 PDF 页码 (Ctrl+G)，输入后按 Enter";
+        helpButton.Click += delegate { ShowShortcutHelp(); };
         toolStrip.Dock = DockStyle.Top;
         toolStrip.BackColor = Color.White;
 
@@ -100,6 +110,51 @@ internal sealed class PdfReaderForm : Form
     private DocumentSession ActiveSession
     {
         get { return documentTabs.SelectedTab == null ? null : documentTabs.SelectedTab.Tag as DocumentSession; }
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        DocumentSession s = ActiveSession;
+        switch (keyData)
+        {
+            case Keys.Control | Keys.O: ShowOpenDialog(); return true;
+            case Keys.F1: ShowShortcutHelp(); return true;
+            case Keys.Control | Keys.W: CloseSelectedTab(); return true;
+            case Keys.Control | Keys.S: if (s != null) SaveSession(s); return true;
+            case Keys.Control | Keys.Tab:
+            case Keys.Control | Keys.Shift | Keys.Tab:
+                if (documentTabs.TabCount > 0) documentTabs.SelectedIndex = (documentTabs.SelectedIndex +
+                    ((keyData & Keys.Shift) != 0 ? documentTabs.TabCount - 1 : 1)) % documentTabs.TabCount;
+                return true;
+        }
+        if (s != null)
+        {
+            switch (keyData)
+            {
+                case Keys.Control | Keys.G: pageBox.Focus(); pageBox.SelectAll(); return true;
+                case Keys.Control | Keys.Oemplus:
+                case Keys.Control | Keys.Shift | Keys.Oemplus:
+                case Keys.Control | Keys.Add: ChangeActiveZoom(0.1f); return true;
+                case Keys.Control | Keys.OemMinus:
+                case Keys.Control | Keys.Subtract: ChangeActiveZoom(-0.1f); return true;
+                case Keys.Control | Keys.D0:
+                case Keys.Control | Keys.NumPad0: s.Viewer.SetZoom(1f); return true;
+                case Keys.Control | Keys.D1: s.Viewer.FitPage(false); return true;
+                case Keys.Control | Keys.D2: s.Viewer.FitPage(true); return true;
+                case Keys.Control | Keys.Home: s.Viewer.GoToPage(0, 0); return true;
+                case Keys.Control | Keys.End: s.Viewer.GoToPage(s.PageCount - 1, 0); return true;
+                case Keys.Control | Keys.PageUp: NavigateActive(-1); return true;
+                case Keys.Control | Keys.PageDown: NavigateActive(1); return true;
+                case Keys.Control | Keys.Shift | Keys.H: highlightButton.Checked = !highlightButton.Checked; return true;
+                case Keys.Escape: highlightButton.Checked = false; s.Viewer.Focus(); return true;
+            }
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private void ShowShortcutHelp()
+    {
+        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+H 区域高亮；Esc 返回阅读\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void ShowOpenDialog()
@@ -211,6 +266,7 @@ internal sealed class PdfReaderForm : Form
 
     private void ReadingPositionChanged(DocumentSession session, ReadingPositionEventArgs e)
     {
+        if (ActiveSession == session) zoomLabel.Text = Math.Round(session.Viewer.Zoom * 100) + "%";
         bool changed = e.PageIndex != session.Record.lastPage ||
             Math.Abs(e.PageOffset - session.Record.lastPageOffset) > 0.001 ||
             Math.Abs(session.Viewer.Zoom - session.Record.zoom) > 0.001f;

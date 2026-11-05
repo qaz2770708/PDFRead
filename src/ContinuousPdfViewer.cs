@@ -46,6 +46,7 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
     private bool highlightMode;
     private bool active;
     private bool dragging;
+    private int zoomWheelRemainder;
     private int dragPage = -1;
     private Point dragStart;
     private Point dragEnd;
@@ -119,6 +120,44 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
         QueueVisibleRender();
     }
 
+    public void SetZoomAt(float value, Point anchor)
+    {
+        if (pageBounds.Count == 0 || Math.Abs(ClampZoom(value) - zoom) < 0.0001f) return;
+        Point content = ToContentPoint(anchor);
+        int index = FindPageAt(content);
+        if (index < 0) { SetZoom(value); return; }
+        Rectangle before = pageBounds[index];
+        double x = (double)(content.X - before.Left) / before.Width;
+        double y = (double)(content.Y - before.Top) / before.Height;
+        SetZoom(value);
+        Rectangle after = pageBounds[index];
+        AutoScrollPosition = new Point(Math.Max(0, after.Left + (int)Math.Round(x * after.Width) - anchor.X),
+            Math.Max(0, after.Top + (int)Math.Round(y * after.Height) - anchor.Y));
+        NotifyReadingPosition();
+        QueueVisibleRender();
+    }
+
+    public void FitPage(bool widthOnly)
+    {
+        if (pageSizes.Count == 0) return;
+        SizeF size = pageSizes[CurrentPage];
+        float fit = (ClientSize.Width - OuterMargin * 2f - SystemInformation.VerticalScrollBarWidth) / size.Width;
+        if (!widthOnly) fit = Math.Min(fit, (ClientSize.Height - OuterMargin * 2f) / size.Height);
+        SetZoom(fit);
+    }
+
+    internal bool HandleZoomWheel(MouseEventArgs e, Keys modifiers)
+    {
+        if ((modifiers & Keys.Control) == 0) { zoomWheelRemainder = 0; return false; }
+        HandledMouseEventArgs handled = e as HandledMouseEventArgs;
+        if (handled != null) handled.Handled = true;
+        zoomWheelRemainder += e.Delta;
+        int steps = zoomWheelRemainder / 120;
+        zoomWheelRemainder %= 120;
+        if (steps != 0) SetZoomAt(zoom + steps * 0.1f, e.Location);
+        return true;
+    }
+
     public void GoToPage(int pageIndex, double offset)
     {
         if (pageBounds.Count == 0) return;
@@ -141,6 +180,13 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
         }
         int scrollTop = Math.Max(0, -AutoScrollPosition.Y);
         pageIndex = 0;
+        if (scrollTop > 0 && scrollTop + ClientSize.Height >= AutoScrollMinSize.Height - 2)
+        {
+            pageIndex = pageBounds.Count - 1;
+            Rectangle last = pageBounds[pageIndex];
+            pageOffset = Math.Max(0, Math.Min(1, (double)(scrollTop - last.Top) / last.Height));
+            return;
+        }
         for (int i = 0; i < pageBounds.Count; i++)
         {
             Rectangle page = pageBounds[i];
@@ -174,6 +220,7 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
+        if (HandleZoomWheel(e, ModifierKeys)) return;
         base.OnMouseWheel(e);
         QueueVisibleRender();
         NotifyReadingPosition();
