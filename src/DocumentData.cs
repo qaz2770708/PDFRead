@@ -71,6 +71,11 @@ internal sealed class DocumentSession
     public ContinuousPdfViewer Viewer;
     public TabPage Tab;
     public PdfNavigationData Navigation;
+    public DocumentThumbnails Thumbnails;
+    public EventHandler<HighlightCreatedEventArgs> HighlightHandler;
+    public EventHandler<int> PageHandler;
+    public EventHandler<ReadingPositionEventArgs> PositionHandler;
+    public EventHandler<NavigationTarget> LinkHandler;
     public bool Dirty;
     public bool ModifiedByRecoveryOrMigration;
 }

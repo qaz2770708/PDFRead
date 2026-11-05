@@ -6,6 +6,9 @@ PDFRead 是一个 Windows 桌面 PDF 阅读器原型，使用 WinForms 和 Windo
 
 - 连续纵向阅读，滚动到一页末尾后直接接续下一页；不同尺寸页面在阅读区水平居中。
 - 多 PDF 标签页，同一路径重复打开时切换到已有标签。
+- 顶部仅保留打开按钮；页码、缩放、高亮、保存状态等集中到右侧悬浮工具，默认透明度 60%，悬停时变清晰。
+- 右侧目录/书签/缩略图导航可显示和收起；目录章节有目标页预览，全部页面缩略图可点击跳转，按可见范围渐进渲染。
+- 每个标签右侧有关闭 X；双击关闭、按住拖动排序、拖出当前窗口后松开创建独立窗口。转移原会话和未保存数据，关闭原窗口不影响新窗口。
 - 为每份 PDF 单独记录 SHA-256 版本、当前页、页内纵向位置、缩放比例和区域高亮。
 - 将 `文件名.pdf` 与 `文件名.pdfdata` 配对；PDF 内容哈希变化时询问新建版本数据，或显式确认沿用旧注释。
 - 自动保存阅读位置、标注立即保存、手动保存按钮、保存失败状态和错误提示；关闭时保存失败会阻止关闭。
@@ -14,7 +17,7 @@ PDFRead 是一个 Windows 桌面 PDF 阅读器原型，使用 WinForms 和 Windo
 - PDF 内嵌分层目录和页内内部链接可点击跳转到实际 PDF 页码；支持命名目标和旋转页坐标。
 - 用户书签支持添加、重命名、更新位置、删除子树、调整层级和同级顺序；记录页内位置及缩放，各文档独立保存。
 - 将 v1/v2 `.pdfdata` 自动升级到 v3，保留阅读进度、标注和版本记录。
-- 当前可创建区域高亮。其他标注类型、便签、跨窗口拖出标签、完整编辑工具和导出带注释 PDF 尚未实现。
+- 当前可创建区域高亮。其他标注类型、便签、完整编辑工具和导出带注释 PDF 尚未实现。
 
 ## 构建和运行
 
@@ -24,7 +27,7 @@ PDFRead 是一个 Windows 桌面 PDF 阅读器原型，使用 WinForms 和 Windo
 .\build.ps1
 ```
 
-构建完成后，在 `outputs/` 运行 `PDFReader.exe`。发行包 `outputs/PDFReader-M3.zip` 同时包含配置文件、所有运行依赖和目录示例 PDF。也可在命令行把 PDF 文件路径作为程序参数传入。
+构建完成后，在 `outputs/` 运行 `PDFReader.exe`。发行包 `outputs/PDFReader-M3.1.zip` 同时包含配置文件、所有运行依赖和目录示例 PDF。也可在命令行把 PDF 文件路径作为程序参数传入。运行中的旧程序占用默认构建目录时，可用 `./build.ps1 -BuildOutputPath work/release-ui` 构建到隔离目录并更新 outputs。
 
 ## 数据与兼容性
 
@@ -36,4 +39,4 @@ PDFRead 是一个 Windows 桌面 PDF 阅读器原型，使用 WinForms 和 Windo
 
 PDF 目录解析使用 PDFsharp-GDI 6.2.4（MIT），渲染继续使用 Windows PDF API。第三方许可见 [docs/THIRD-PARTY-NOTICES.md](docs/THIRD-PARTY-NOTICES.md)。
 
-运行 `./package.ps1` 可生成第三步 ZIP，使用 `-NoBuild` 可打包已构建的 Release 输出。
+运行 `./package.ps1` 可生成新版 ZIP，使用 `-NoBuild` 可打包已构建的 outputs 发行文件。界面与多窗口验收见 [docs/UI-validation.md](docs/UI-validation.md)。

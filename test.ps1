@@ -2,7 +2,7 @@ param([switch]$NoRestore)
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
-    foreach ($suite in @(@('Acceptance', 'samples/navigation.pdf'), @('StorageAcceptance', 'samples/continuous.pdf'))) {
+    foreach ($suite in @(@('Acceptance', 'samples/navigation.pdf'), @('StorageAcceptance', 'samples/continuous.pdf'), @('UiInteractionAcceptance', 'samples/navigation.pdf'))) {
         $arguments = @('build', ('tests/' + $suite[0] + '.csproj'), '-c', 'Release')
         if ($NoRestore) { $arguments += '--no-restore' }
         dotnet @arguments

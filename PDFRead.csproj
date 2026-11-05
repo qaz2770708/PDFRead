@@ -19,6 +19,11 @@
     <Compile Include="src\DocumentData.cs" />
     <Compile Include="src\PdfNavigation.cs" />
     <Compile Include="src\PdfReaderNavigation.cs" />
+    <Compile Include="src\DocumentTabs.cs" />
+    <Compile Include="src\PageThumbnails.cs" />
+    <Compile Include="src\ReadingTools.cs" />
+    <Compile Include="src\ReaderWorkspace.cs" />
+    <Compile Include="src\NavigationPresentation.cs" />
     <Compile Include="src\WindowsPdfRenderer.cs" />
     <PackageReference Include="PDFsharp-GDI" Version="6.2.4" />
     <Reference Include="System.Web.Extensions" />

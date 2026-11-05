@@ -48,8 +48,8 @@ internal static class IntegrationAcceptance
                 var tabs=(TabControl)Field(form,"documentTabs");Check(tabs.SelectedTab==s.Tab,"next tab shortcut");
                 Press(form,Keys.Control|Keys.Shift|Keys.Tab);Check(tabs.SelectedTab==sessions[1].Tab,"previous tab shortcut");
                 Press(form,Keys.Control|Keys.Tab);
-                var split=(SplitContainer)Field(form,"navigationSplit");bool collapsed=split.Panel1Collapsed;
-                Press(form,Keys.Control|Keys.B);Check(split.Panel1Collapsed!=collapsed,"toggle navigation sidebar");Press(form,Keys.Control|Keys.B);
+                var split=(SplitContainer)Field(form,"navigationSplit");bool collapsed=split.Panel2Collapsed;
+                Press(form,Keys.Control|Keys.B);Check(split.Panel2Collapsed!=collapsed,"toggle navigation sidebar");Press(form,Keys.Control|Keys.B);
                 Press(form,Keys.Control|Keys.G);var input=(ToolStripTextBox)Field(form,"pageBox");Check(input.TextBox.Focused,"page number input focus");
                 input.Text="3";Call(form,"PageBoxKeyDown",input,new KeyEventArgs(Keys.Enter));Check(viewer.CurrentPage==2,"typed page number jump");
                 Press(form,Keys.Control|Keys.D0);Check(Math.Abs(viewer.Zoom-1)<0.001,"100 percent shortcut");
@@ -86,7 +86,7 @@ internal static class IntegrationAcceptance
                 var outline=(TreeView)Field(form,"outlineTree");
                 Call(outline,"OnNodeMouseClick",new TreeNodeMouseClickEventArgs(outline.Nodes[1],MouseButtons.Left,1,5,5));
                 Check(viewer.CurrentPage==3 && ((ToolStripTextBox)Field(form,"pageBox")).Text=="4","outline click matches actual PDF page number");
-                Call(outline,"OnNodeMouseClick",new TreeNodeMouseClickEventArgs(outline.Nodes[0],MouseButtons.Left,1,5,5));
+                Call(outline,"OnNodeMouseClick",new TreeNodeMouseClickEventArgs(outline.Nodes[0],MouseButtons.Left,1,120,5));
                 Check(viewer.CurrentPage==1 && Math.Abs(viewer.Zoom-1.2)<.001,"outline XYZ zoom and page");
                 viewer.SetZoom(1.4f);viewer.GoToPage(1,.3);Press(form,Keys.Control|Keys.D);
                 Check(s.Record.bookmarks.Count==1 && sessions[1].Record.bookmarks.Count==0,"bookmarks isolated per document");

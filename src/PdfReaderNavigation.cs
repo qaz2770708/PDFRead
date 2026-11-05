@@ -6,23 +6,43 @@ using System.Windows.Forms;
 
 internal sealed partial class PdfReaderForm
 {
-    private readonly SplitContainer navigationSplit = new SplitContainer { Dock = DockStyle.Fill, Width = 1000, SplitterDistance = 260, Panel1MinSize = 180, Panel2MinSize = 300 };
+    private readonly SplitContainer navigationSplit = new SplitContainer { Dock = DockStyle.Fill, Width = 1120, SplitterDistance = 810, Panel1MinSize = 300, Panel2MinSize = 260, Panel2Collapsed = true, FixedPanel = FixedPanel.Panel2 };
     private readonly TabControl navigationTabs = new TabControl { Dock = DockStyle.Fill };
-    private readonly TreeView outlineTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true };
+    private readonly TreeView outlineTree = new OutlinePreviewTree { Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true };
     private readonly TreeView bookmarkTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false, LabelEdit = true, ShowNodeToolTips = true };
     private readonly Label outlineMessage = new Label { Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(260,0), Padding = new Padding(6) };
     private readonly ToolStrip bookmarkTools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top };
     private DocumentSession navigationSession;
+    private readonly PageThumbnailView thumbnailView = new PageThumbnailView();
+    private readonly Timer thumbnailTimer = new Timer { Interval = 90 };
 
     private void InitializeNavigation()
     {
-        navigationSplit.Panel2.Controls.Add(documentTabs);
-        navigationSplit.Panel1.Controls.Add(navigationTabs);
+        navigationSplit.Panel1.Controls.Add(documentTabs);
+        navigationSplit.Panel2.Controls.Add(navigationTabs);
+        var header = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden };
+        header.Items.Add(new ToolStripLabel("导航"));
+        var hide = new ToolStripButton("收起 ×") { Alignment = ToolStripItemAlignment.Right, ToolTipText = "隐藏导航栏 (Ctrl+B)" };
+        hide.Click += delegate { SetNavigationVisible(false); };
+        header.Items.Add(hide);
+        navigationSplit.Panel2.Controls.Add(header);
         TabPage pdf = new TabPage("PDF 目录");
         pdf.Controls.Add(outlineTree); pdf.Controls.Add(outlineMessage);
         TabPage user = new TabPage("用户书签");
         user.Controls.Add(bookmarkTree); user.Controls.Add(bookmarkTools);
         navigationTabs.TabPages.Add(pdf); navigationTabs.TabPages.Add(user);
+        TabPage pages = new TabPage("缩略图"); pages.Controls.Add(thumbnailView); navigationTabs.TabPages.Add(pages);
+        thumbnailView.PageSelected += delegate(object sender, int page) { var s = ActiveSession; if (s != null) { s.Viewer.GoToPage(page, 0); s.Viewer.Focus(); } };
+        outlineTree.DrawMode = TreeViewDrawMode.OwnerDrawAll;
+        outlineTree.ItemHeight = 112;
+        outlineTree.Indent = 16;
+        outlineTree.FullRowSelect = true;
+        outlineTree.ShowLines = false;
+        outlineTree.ShowPlusMinus = false;
+        outlineTree.DrawNode += DrawOutlineThumbnail;
+        thumbnailTimer.Tick += delegate { RenderNavigationThumbnail(); };
+        thumbnailTimer.Start();
+        navigationTabs.SelectedIndexChanged += delegate { UpdateNavigationButtons(); };
         AddBookmarkTool("添加", "添加当前位置 (Ctrl+D)", () => AddBookmark(false));
         AddBookmarkTool("子级", "在选中书签下添加子书签", () => AddBookmark(true));
         AddBookmarkTool("改名", "重命名 (F2)", () => { if(bookmarkTree.SelectedNode != null) bookmarkTree.SelectedNode.BeginEdit(); });
@@ -32,7 +52,12 @@ internal sealed partial class PdfReaderForm
         AddBookmarkTool("↓", "同级下移", () => MoveBookmark(1));
         AddBookmarkTool("→", "降一级：移入前一个同级书签", () => ChangeBookmarkLevel(true));
         AddBookmarkTool("←", "升一级：移到上一级", () => ChangeBookmarkLevel(false));
-        outlineTree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e) { if(e.Button == MouseButtons.Left) ActivateOutline(e.Node); };
+        outlineTree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            if (e.Node.Nodes.Count > 0 && e.X < e.Node.Level * 16 + 16) e.Node.Toggle();
+            else ActivateOutline(e.Node);
+        };
         outlineTree.KeyDown += delegate(object sender, KeyEventArgs e) { if(e.KeyCode==Keys.Enter) { ActivateOutline(outlineTree.SelectedNode); e.SuppressKeyPress=true; } };
         bookmarkTree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e) { if(e.Button==MouseButtons.Left) ActivateBookmark(e.Node); };
         bookmarkTree.KeyDown += delegate(object sender, KeyEventArgs e)
@@ -66,6 +91,7 @@ internal sealed partial class PdfReaderForm
         outlineTree.ExpandAll();
         bookmarkTools.Enabled=session!=null;
         RefreshBookmarks();
+        thumbnailView.Configure(session?.Thumbnails, session == null ? 0 : session.PageCount, session == null ? 0 : session.Viewer.CurrentPage);
     }
     private TreeNode OutlineNode(NavigationTarget entry)
     {
@@ -122,7 +148,7 @@ internal sealed partial class PdfReaderForm
         var parent=child ? bookmarkTree.SelectedNode?.Tag as UserBookmark : null;
         var b=new UserBookmark { id=Guid.NewGuid().ToString("N"),title="第 "+(s.Viewer.CurrentPage+1)+" 页",parentId=parent?.id,createdUtc=DateTime.UtcNow.ToString("o") };
         CaptureBookmark(s,b);s.Record.bookmarks.Add(b);MarkDirty(s);SaveSession(s);
-        navigationTabs.SelectedIndex=1; RefreshBookmarks();
+        ShowNavigation(1); RefreshBookmarks();
         var found=FindBookmarkNode(bookmarkTree.Nodes,b.id);bookmarkTree.SelectedNode=found;found?.EnsureVisible();
     }
     private static TreeNode FindBookmarkNode(TreeNodeCollection nodes,string id)

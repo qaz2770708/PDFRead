@@ -12,7 +12,7 @@ internal static class Program
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new PdfReaderForm(args));
+        Application.Run(new ReaderApplicationContext(args));
     }
 }
 
@@ -20,7 +20,6 @@ internal sealed partial class PdfReaderForm : Form
 {
     private readonly ToolStrip toolStrip = new ToolStrip();
     private readonly ToolStripButton openButton = new ToolStripButton("打开 PDF");
-    private readonly ToolStripButton closeButton = new ToolStripButton("关闭标签") { Enabled = false };
     private readonly ToolStripButton previousButton = new ToolStripButton("‹") { Enabled = false };
     private readonly ToolStripTextBox pageBox = new ToolStripTextBox { Width = 44, TextBoxTextAlign = HorizontalAlignment.Center, Enabled = false };
     private readonly ToolStripLabel pageTotalLabel = new ToolStripLabel("/ -");
@@ -30,10 +29,8 @@ internal sealed partial class PdfReaderForm : Form
     private readonly ToolStripButton zoomInButton = new ToolStripButton("+") { Enabled = false };
     private readonly ToolStripButton highlightButton = new ToolStripButton("区域高亮：拖拽框选") { CheckOnClick = true, Enabled = false };
     private readonly ToolStripButton saveButton = new ToolStripButton("保存") { Enabled = false };
-    private readonly TabControl documentTabs = new TabControl { Dock = DockStyle.Fill, Alignment = TabAlignment.Top };
-    private readonly StatusStrip statusStrip = new StatusStrip();
-    private readonly ToolStripStatusLabel documentLabel = new ToolStripStatusLabel("请打开 PDF") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
-    private readonly ToolStripStatusLabel statusLabel = new ToolStripStatusLabel("未打开文档");
+    private readonly DocumentTabControl documentTabs = new DocumentTabControl();
+    private readonly ToolStripLabel statusLabel = new ToolStripLabel("未打开文档");
     private readonly List<DocumentSession> sessions = new List<DocumentSession>();
     private readonly HashSet<DocumentSession> pendingProgressSaves = new HashSet<DocumentSession>();
     private readonly Timer progressSaveTimer = new Timer { Interval = 800 };
@@ -48,27 +45,13 @@ internal sealed partial class PdfReaderForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(760, 560);
         Size = new Size(1120, 820);
+        Font = new Font("Microsoft YaHei UI", 9f);
         BackColor = Color.FromArgb(244, 246, 248);
 
         toolStrip.GripStyle = ToolStripGripStyle.Hidden;
         toolStrip.Padding = new Padding(10, 4, 8, 4);
         toolStrip.Items.Add(openButton);
-        toolStrip.Items.Add(closeButton);
-        toolStrip.Items.Add(new ToolStripSeparator());
-        toolStrip.Items.Add(previousButton);
-        toolStrip.Items.Add(pageBox);
-        toolStrip.Items.Add(pageTotalLabel);
-        toolStrip.Items.Add(nextButton);
-        toolStrip.Items.Add(new ToolStripSeparator());
-        toolStrip.Items.Add(zoomOutButton);
-        toolStrip.Items.Add(zoomLabel);
-        toolStrip.Items.Add(zoomInButton);
-        toolStrip.Items.Add(new ToolStripSeparator());
-        toolStrip.Items.Add(highlightButton);
-        toolStrip.Items.Add(saveButton);
-        toolStrip.Items.Add(helpButton);
         openButton.ToolTipText = "打开 PDF (Ctrl+O)";
-        closeButton.ToolTipText = "关闭标签 (Ctrl+W)";
         saveButton.ToolTipText = "保存数据 (Ctrl+S)";
         zoomInButton.ToolTipText = "放大 (Ctrl++ / Ctrl+滚轮)";
         zoomOutButton.ToolTipText = "缩小 (Ctrl+- / Ctrl+滚轮)";
@@ -78,17 +61,13 @@ internal sealed partial class PdfReaderForm : Form
         toolStrip.Dock = DockStyle.Top;
         toolStrip.BackColor = Color.White;
 
-        statusStrip.Items.Add(documentLabel);
-        statusStrip.Items.Add(statusLabel);
-        statusStrip.Dock = DockStyle.Bottom;
-        statusStrip.BackColor = Color.White;
         InitializeNavigation();
         Controls.Add(navigationSplit);
-        Controls.Add(statusStrip);
         Controls.Add(toolStrip);
+        InitializeReadingTools();
+        InitializeDocumentTabs();
 
         openButton.Click += delegate { ShowOpenDialog(); };
-        closeButton.Click += delegate { CloseSelectedTab(); };
         previousButton.Click += delegate { NavigateActive(-1); };
         nextButton.Click += delegate { NavigateActive(1); };
         zoomOutButton.Click += delegate { ChangeActiveZoom(-0.1f); };
@@ -133,8 +112,8 @@ internal sealed partial class PdfReaderForm : Form
             switch (keyData)
             {
                 case Keys.Control | Keys.D: AddBookmark(false); return true;
-                case Keys.Control | Keys.B: navigationSplit.Panel1Collapsed = !navigationSplit.Panel1Collapsed; return true;
-                case Keys.Control | Keys.G: pageBox.Focus(); pageBox.SelectAll(); return true;
+                case Keys.Control | Keys.B: ToggleNavigation(navigationTabs.SelectedIndex); return true;
+                case Keys.Control | Keys.G: FocusPageInput(); return true;
                 case Keys.Control | Keys.Oemplus:
                 case Keys.Control | Keys.Shift | Keys.Oemplus:
                 case Keys.Control | Keys.Add: ChangeActiveZoom(0.1f); return true;
@@ -149,7 +128,7 @@ internal sealed partial class PdfReaderForm : Form
                 case Keys.Control | Keys.PageUp: NavigateActive(-1); return true;
                 case Keys.Control | Keys.PageDown: NavigateActive(1); return true;
                 case Keys.Control | Keys.Shift | Keys.H: highlightButton.Checked = !highlightButton.Checked; return true;
-                case Keys.Escape: highlightButton.Checked = false; s.Viewer.SetHighlightMode(false); s.Viewer.Focus(); return true;
+                case Keys.Escape: documentTabs.CancelDrag(); highlightButton.Checked = false; s.Viewer.SetHighlightMode(false); s.Viewer.Focus(); return true;
             }
         }
         return base.ProcessCmdKey(ref msg, keyData);
@@ -177,6 +156,14 @@ internal sealed partial class PdfReaderForm : Form
         try
         {
             string fullPath = Path.GetFullPath(path);
+            PdfReaderForm otherWindow = WindowHost?.FindDocument(fullPath);
+            if (otherWindow != null && otherWindow != this)
+            {
+                if (otherWindow.WindowState == FormWindowState.Minimized) otherWindow.WindowState = FormWindowState.Normal;
+                otherWindow.Activate();
+                otherWindow.OpenPdf(fullPath);
+                return;
+            }
             string hash = DocumentDataRepository.CalculateSha256(fullPath);
             DocumentSession samePath = sessions.FirstOrDefault(s => String.Equals(s.PdfPath, fullPath, StringComparison.OrdinalIgnoreCase));
             if (samePath != null && String.Equals(samePath.PdfHash, hash, StringComparison.OrdinalIgnoreCase))
@@ -216,15 +203,14 @@ internal sealed partial class PdfReaderForm : Form
             session.Viewer = new ContinuousPdfViewer { Dock = DockStyle.Fill };
             session.Viewer.Configure(session.PdfDocument, count, session.Record.zoom, session.Annotations);
             session.Navigation = PdfNavigationReader.Read(fullPath);
+            session.Thumbnails = new DocumentThumbnails(session.PdfDocument, count);
             session.Viewer.Links = session.Navigation.Links;
-            session.Viewer.LinkActivated += delegate(object sender, NavigationTarget target) { NavigateTarget(session, target); };
-            session.Viewer.HighlightCreated += delegate(object sender, HighlightCreatedEventArgs e) { AddHighlight(session, e); };
-            session.Viewer.ActivePageChanged += delegate(object sender, int page) { ActivePageChanged(session, page); };
-            session.Viewer.ReadingPositionChanged += delegate(object sender, ReadingPositionEventArgs e) { ReadingPositionChanged(session, e); };
+            BindSession(session);
             session.Viewer.SetHighlightMode(highlightButton.Checked);
 
             session.Tab = new TabPage(Path.GetFileName(fullPath));
             session.Tab.Tag = session;
+            session.Tab.ToolTipText = fullPath + "\r\n点击 × 或双击标签关闭；按住拖动排序或拖出窗口";
             session.Tab.Controls.Add(session.Viewer);
             sessions.Add(session);
             documentTabs.TabPages.Add(session.Tab);
@@ -272,6 +258,7 @@ internal sealed partial class PdfReaderForm : Form
 
     private void ReadingPositionChanged(DocumentSession session, ReadingPositionEventArgs e)
     {
+        if (movingSession || documentTabs.Reordering) return;
         if (ActiveSession == session) zoomLabel.Text = Math.Round(session.Viewer.Zoom * 100) + "%";
         bool changed = e.PageIndex != session.Record.lastPage ||
             Math.Abs(e.PageOffset - session.Record.lastPageOffset) > 0.001 ||
@@ -293,10 +280,12 @@ internal sealed partial class PdfReaderForm : Form
         pageTotalLabel.Text = "/ " + session.PageCount;
         previousButton.Enabled = page > 0;
         nextButton.Enabled = page < session.PageCount - 1;
+        thumbnailView.SelectPage(page, true);
     }
 
     private void SelectedTabChanged(object sender, EventArgs e)
     {
+        if (movingSession || documentTabs.Reordering) return;
         FlushPendingProgress();
         DocumentSession active = ActiveSession;
         foreach (DocumentSession session in sessions) session.Viewer.SetActive(session == active);
@@ -339,6 +328,7 @@ internal sealed partial class PdfReaderForm : Form
         if (e.KeyCode != Keys.Enter || session == null) return;
         if (Int32.TryParse(pageBox.Text, out int requested))
             session.Viewer.GoToPage(Math.Max(0, Math.Min(session.PageCount - 1, requested - 1)), 0);
+        session.Viewer.Focus();
         e.SuppressKeyPress = true;
     }
 
@@ -405,7 +395,6 @@ internal sealed partial class PdfReaderForm : Form
     {
         RefreshNavigation(session);
         bool open = session != null;
-        closeButton.Enabled = open;
         pageBox.Enabled = open;
         previousButton.Enabled = open && session.Viewer.CurrentPage > 0;
         nextButton.Enabled = open && session.Viewer.CurrentPage < session.PageCount - 1;
@@ -418,7 +407,7 @@ internal sealed partial class PdfReaderForm : Form
             pageBox.Text = String.Empty;
             pageTotalLabel.Text = "/ -";
             zoomLabel.Text = "82%";
-            documentLabel.Text = "请打开 PDF";
+            AccessibleDescription = "请打开 PDF";
             highlightButton.Checked = false;
             SetStatus("未打开文档", Color.FromArgb(82, 96, 109));
             Text = "PDF 阅读器";
@@ -430,7 +419,7 @@ internal sealed partial class PdfReaderForm : Form
         pageBox.Text = (page + 1).ToString();
         pageTotalLabel.Text = "/ " + session.PageCount;
         zoomLabel.Text = Math.Round(session.Viewer.Zoom * 100).ToString() + "%";
-        documentLabel.Text = session.PdfPath;
+        AccessibleDescription = session.PdfPath;
         highlightButton.Checked = session.Viewer.HighlightMode;
         Text = "PDF 阅读器 - " + Path.GetFileName(session.PdfPath);
         SetStatus(session.Dirty ? "未保存" : "已保存", session.Dirty ? Color.FromArgb(180, 83, 9) : Color.FromArgb(24, 121, 78));
@@ -442,6 +431,7 @@ internal sealed partial class PdfReaderForm : Form
     {
         statusLabel.Text = text;
         statusLabel.ForeColor = color;
+        statusLabel.ToolTipText = text;
     }
 
     private void CloseSelectedTab()
@@ -453,11 +443,14 @@ internal sealed partial class PdfReaderForm : Form
     private bool CloseSession(DocumentSession session)
     {
         if (session.Dirty && !SaveSession(session)) return false;
+        UnbindSession(session);
         pendingProgressSaves.Remove(session);
         sessions.Remove(session);
         documentTabs.TabPages.Remove(session.Tab);
         session.Viewer.Dispose();
+        session.Thumbnails?.Dispose();
         WindowsPdfRenderer.DisposeDocument(session.PdfDocument);
+        session.Tab.Dispose();
         UpdateToolbar(ActiveSession);
         return true;
     }
@@ -479,11 +472,15 @@ internal sealed partial class PdfReaderForm : Form
 
     private void DisposeSessions()
     {
+        if (sessionResourcesDisposed) return;
+        sessionResourcesDisposed = true;
         progressSaveTimer.Stop();
         progressSaveTimer.Dispose();
         foreach (DocumentSession session in sessions.ToArray())
         {
+            UnbindSession(session);
             session.Viewer.Dispose();
+            session.Thumbnails?.Dispose();
             WindowsPdfRenderer.DisposeDocument(session.PdfDocument);
         }
         sessions.Clear();
