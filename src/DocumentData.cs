@@ -10,7 +10,7 @@ using System.Windows.Forms;
 [Serializable]
 internal sealed class SidecarFile
 {
-    public int formatVersion { get; set; } = 2;
+    public int formatVersion { get; set; } = 3;
     public int revision { get; set; }
     public List<VersionRecord> versions { get; set; } = new List<VersionRecord>();
     public string lastSavedUtc { get; set; }
@@ -26,7 +26,21 @@ internal sealed class VersionRecord
     public double lastPageOffset { get; set; }
     public float zoom { get; set; } = 0.82f;
     public List<AreaHighlight> annotations { get; set; } = new List<AreaHighlight>();
+    public List<UserBookmark> bookmarks { get; set; } = new List<UserBookmark>();
     public string updatedUtc { get; set; }
+}
+
+[Serializable]
+internal sealed class UserBookmark
+{
+    public string id { get; set; }
+    public string title { get; set; }
+    public string parentId { get; set; }
+    public int pageIndex { get; set; }
+    public double pageOffset { get; set; }
+    public double horizontalOffset { get; set; }
+    public float zoom { get; set; }
+    public string createdUtc { get; set; }
 }
 
 [Serializable]
@@ -56,6 +70,7 @@ internal sealed class DocumentSession
     public List<AreaHighlight> Annotations = new List<AreaHighlight>();
     public ContinuousPdfViewer Viewer;
     public TabPage Tab;
+    public PdfNavigationData Navigation;
     public bool Dirty;
     public bool ModifiedByRecoveryOrMigration;
 }
@@ -69,7 +84,7 @@ internal sealed class SidecarLoadResult
 
 internal static class DocumentDataRepository
 {
-    private const int CurrentFormatVersion = 2;
+    private const int CurrentFormatVersion = 3;
     private static readonly JavaScriptSerializer Serializer = new JavaScriptSerializer
     {
         MaxJsonLength = Int32.MaxValue,
@@ -204,6 +219,7 @@ internal static class DocumentDataRepository
             needsSave = true;
         }
 
+        if (record.bookmarks == null) record.bookmarks = new List<UserBookmark>();
         if (record.annotations == null) record.annotations = new List<AreaHighlight>();
         record.lastPage = Math.Max(0, Math.Min(record.lastPage, pageCount - 1));
         record.lastPageOffset = Math.Max(0, Math.Min(1, record.lastPageOffset));
@@ -245,7 +261,7 @@ internal static class DocumentDataRepository
         {
             SidecarFile data = Serializer.Deserialize<SidecarFile>(File.ReadAllText(path, Encoding.UTF8));
             if (data == null) throw new InvalidDataException("数据文件为空。");
-            if (data.formatVersion == 1)
+            if (data.formatVersion == 1 || data.formatVersion == 2)
             {
                 data.formatVersion = CurrentFormatVersion;
                 data.revision = Math.Max(0, data.revision);

@@ -1,5 +1,6 @@
 param(
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [switch]$NoRestore
 )
 
 $ErrorActionPreference = 'Stop'
@@ -7,7 +8,9 @@ $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectPath = Join-Path $repoRoot 'PDFRead.csproj'
 $outputPath = Join-Path $repoRoot 'outputs\PDFReader.exe'
 
-dotnet build $projectPath --configuration $Configuration
+$buildArgs = @('build', $projectPath, '--configuration', $Configuration)
+if ($NoRestore) { $buildArgs += '--no-restore' }
+dotnet @buildArgs
 if ($LASTEXITCODE -ne 0) {
     throw "Build failed with exit code $LASTEXITCODE"
 }
@@ -17,7 +20,9 @@ if (-not (Test-Path $builtExe)) {
     throw "Build output not found: $builtExe"
 }
 $outputDirectory = Split-Path -Parent $outputPath
-foreach ($fileName in @('PDFReader.exe', 'PDFReader.exe.config', 'System.Runtime.WindowsRuntime.dll')) {
+$runtimeDirectory = Split-Path -Parent $builtExe
+$runtimeNames = @('PDFReader.exe', 'PDFReader.exe.config') + @(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.dll' -File | Select-Object -ExpandProperty Name)
+foreach ($fileName in $runtimeNames) {
     $source = Join-Path (Split-Path -Parent $builtExe) $fileName
     if (-not (Test-Path $source)) {
         throw "Required runtime file not found: $source"

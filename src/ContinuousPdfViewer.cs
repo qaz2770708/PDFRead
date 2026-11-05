@@ -51,6 +51,9 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
     private Point dragStart;
     private Point dragEnd;
 
+    public List<PageLink> Links = new List<PageLink>();
+    public event EventHandler<NavigationTarget> LinkActivated;
+
     public event EventHandler<HighlightCreatedEventArgs> HighlightCreated;
     public event EventHandler<ReadingPositionEventArgs> ReadingPositionChanged;
     public event EventHandler<int> ActivePageChanged;
@@ -92,6 +95,7 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
 
     public void SetHighlightMode(bool enabled)
     {
+        if (!enabled && dragging) { dragging = false; dragPage = -1; Capture = false; Invalidate(); }
         highlightMode = enabled;
         Cursor = enabled ? Cursors.Cross : Cursors.Default;
     }
@@ -168,6 +172,34 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
         AutoScrollPosition = new Point(x, Math.Max(0, y));
         NotifyReadingPosition();
         QueueVisibleRender();
+    }
+
+    public double CaptureHorizontalPosition()
+    {
+        if (pageBounds.Count == 0) return 0;
+        Rectangle page = pageBounds[CurrentPage];
+        return Math.Max(0, Math.Min(1, (double)(-AutoScrollPosition.X - page.Left) / page.Width));
+    }
+
+    public void GoToLocation(int index, double offset, double horizontal)
+    {
+        GoToPage(index, offset);
+        if (pageBounds.Count == 0) return;
+        Rectangle page = pageBounds[Math.Max(0, Math.Min(pageBounds.Count - 1, index))];
+        int x = page.Width <= ClientSize.Width ? 0 : Math.Max(0, page.Left + (int)Math.Round(page.Width * Math.Max(0, Math.Min(1,horizontal))));
+        AutoScrollPosition = new Point(x,-AutoScrollPosition.Y);
+        NotifyReadingPosition();
+        QueueVisibleRender();
+    }
+
+    private PageLink LinkAt(Point client)
+    {
+        Point content=ToContentPoint(client);
+        int index=FindPageAt(content);
+        if(index<0) return null;
+        Rectangle page=pageBounds[index];
+        PointF p=new PointF((float)(content.X-page.Left)/page.Width,(float)(content.Y-page.Top)/page.Height);
+        return Links.FirstOrDefault(l=>l.PageIndex==index && l.Bounds.Contains(p));
     }
 
     public void CaptureReadingPosition(out int pageIndex, out double pageOffset)
@@ -293,6 +325,13 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
+        Focus();
+        if (e.Button == MouseButtons.Left && !highlightMode)
+        {
+            PageLink link=LinkAt(e.Location);
+            if(link != null) LinkActivated?.Invoke(this,link.Target);
+            return;
+        }
         if (e.Button != MouseButtons.Left || !highlightMode || pageBounds.Count == 0) return;
         Point contentPoint = ToContentPoint(e.Location);
         dragPage = FindPageAt(contentPoint);
@@ -307,6 +346,7 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        if (!highlightMode) Cursor = LinkAt(e.Location) != null ? Cursors.Hand : Cursors.Default;
         if (!dragging) return;
         dragEnd = ToContentPoint(e.Location);
         Invalidate();

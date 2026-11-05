@@ -16,7 +16,7 @@ internal static class Program
     }
 }
 
-internal sealed class PdfReaderForm : Form
+internal sealed partial class PdfReaderForm : Form
 {
     private readonly ToolStrip toolStrip = new ToolStrip();
     private readonly ToolStripButton openButton = new ToolStripButton("打开 PDF");
@@ -82,7 +82,8 @@ internal sealed class PdfReaderForm : Form
         statusStrip.Items.Add(statusLabel);
         statusStrip.Dock = DockStyle.Bottom;
         statusStrip.BackColor = Color.White;
-        Controls.Add(documentTabs);
+        InitializeNavigation();
+        Controls.Add(navigationSplit);
         Controls.Add(statusStrip);
         Controls.Add(toolStrip);
 
@@ -131,6 +132,8 @@ internal sealed class PdfReaderForm : Form
         {
             switch (keyData)
             {
+                case Keys.Control | Keys.D: AddBookmark(false); return true;
+                case Keys.Control | Keys.B: navigationSplit.Panel1Collapsed = !navigationSplit.Panel1Collapsed; return true;
                 case Keys.Control | Keys.G: pageBox.Focus(); pageBox.SelectAll(); return true;
                 case Keys.Control | Keys.Oemplus:
                 case Keys.Control | Keys.Shift | Keys.Oemplus:
@@ -146,7 +149,7 @@ internal sealed class PdfReaderForm : Form
                 case Keys.Control | Keys.PageUp: NavigateActive(-1); return true;
                 case Keys.Control | Keys.PageDown: NavigateActive(1); return true;
                 case Keys.Control | Keys.Shift | Keys.H: highlightButton.Checked = !highlightButton.Checked; return true;
-                case Keys.Escape: highlightButton.Checked = false; s.Viewer.Focus(); return true;
+                case Keys.Escape: highlightButton.Checked = false; s.Viewer.SetHighlightMode(false); s.Viewer.Focus(); return true;
             }
         }
         return base.ProcessCmdKey(ref msg, keyData);
@@ -154,7 +157,7 @@ internal sealed class PdfReaderForm : Form
 
     private void ShowShortcutHelp()
     {
-        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+H 区域高亮；Esc 返回阅读\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+H 区域高亮；Esc 返回阅读\r\nCtrl+D 添加用户书签；Ctrl+B 显示/隐藏导航栏\r\n书签树中 F2 重命名，Delete 删除，Enter 跳转\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void ShowOpenDialog()
@@ -212,6 +215,9 @@ internal sealed class PdfReaderForm : Form
             };
             session.Viewer = new ContinuousPdfViewer { Dock = DockStyle.Fill };
             session.Viewer.Configure(session.PdfDocument, count, session.Record.zoom, session.Annotations);
+            session.Navigation = PdfNavigationReader.Read(fullPath);
+            session.Viewer.Links = session.Navigation.Links;
+            session.Viewer.LinkActivated += delegate(object sender, NavigationTarget target) { NavigateTarget(session, target); };
             session.Viewer.HighlightCreated += delegate(object sender, HighlightCreatedEventArgs e) { AddHighlight(session, e); };
             session.Viewer.ActivePageChanged += delegate(object sender, int page) { ActivePageChanged(session, page); };
             session.Viewer.ReadingPositionChanged += delegate(object sender, ReadingPositionEventArgs e) { ReadingPositionChanged(session, e); };
@@ -397,6 +403,7 @@ internal sealed class PdfReaderForm : Form
 
     private void UpdateToolbar(DocumentSession session)
     {
+        RefreshNavigation(session);
         bool open = session != null;
         closeButton.Enabled = open;
         pageBox.Enabled = open;
