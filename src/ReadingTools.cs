@@ -122,7 +122,7 @@ internal sealed partial class PdfReaderForm
     {
         var panel = new Panel { BackColor=Color.White, Margin=Padding.Empty };
         var label = new Label { Text=title, ForeColor=Color.SlateGray, AutoSize=false, Height=18, Width=150, TextAlign=ContentAlignment.MiddleLeft };
-        var strip = new ToolStrip { AutoSize=false, GripStyle=ToolStripGripStyle.Hidden, BackColor=Color.White, Padding=Padding.Empty, CanOverflow=false, LayoutStyle=ToolStripLayoutStyle.HorizontalStackWithOverflow };
+        var strip = new ToolStrip { Dock=DockStyle.None, AutoSize=false, GripStyle=ToolStripGripStyle.Hidden, BackColor=Color.White, Padding=Padding.Empty, CanOverflow=false, LayoutStyle=ToolStripLayoutStyle.HorizontalStackWithOverflow };
         strip.Items.AddRange(items);
         panel.Controls.Add(label);panel.Controls.Add(strip);
         panel.Resize += delegate

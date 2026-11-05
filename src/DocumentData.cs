@@ -57,6 +57,27 @@ internal sealed class AreaHighlight
     public double height { get; set; }
     public string color { get; set; }
     public string createdUtc { get; set; }
+    public string modifiedUtc { get; set; }
+    public string text { get; set; }
+    public double opacity { get; set; } = .45;
+    public float strokeWidth { get; set; } = 2;
+    public float fontSize { get; set; } = 12;
+    public List<AnnotationPoint> points { get; set; } = new List<AnnotationPoint>();
+    public List<AnnotationRegion> textRegions { get; set; } = new List<AnnotationRegion>();
+}
+
+internal sealed class AnnotationPoint
+{
+    public double x { get; set; }
+    public double y { get; set; }
+}
+internal sealed class AnnotationRegion
+{
+    public double x { get; set; }
+    public double y { get; set; }
+    public double width { get; set; }
+    public double height { get; set; }
+    public List<AnnotationPoint> quad { get; set; } = new List<AnnotationPoint>();
 }
 
 internal sealed class DocumentSession
@@ -73,7 +94,10 @@ internal sealed class DocumentSession
     public TabPage Tab;
     public PdfNavigationData Navigation;
     public DocumentThumbnails Thumbnails;
-    public EventHandler<HighlightCreatedEventArgs> HighlightHandler;
+    public EventHandler AnnotationHandler;
+    public EventHandler SelectionHandler;
+    public EventHandler<AnnotationEditEventArgs> EditHandler;
+    public PdfTextRegions TextSource;
     public EventHandler<int> PageHandler;
     public EventHandler<ReadingPositionEventArgs> PositionHandler;
     public EventHandler<NavigationTarget> LinkHandler;

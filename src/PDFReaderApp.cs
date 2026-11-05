@@ -65,6 +65,7 @@ internal sealed partial class PdfReaderForm : Form
         Controls.Add(navigationSplit);
         Controls.Add(toolStrip);
         InitializeReadingTools();
+        InitializeAnnotationTools();
         InitializeDocumentTabs();
 
         openButton.Click += delegate { ShowOpenDialog(); };
@@ -109,6 +110,7 @@ internal sealed partial class PdfReaderForm : Form
         }
         if (s != null)
         {
+            if(HandleAnnotationShortcut(s,keyData))return true;
             switch (keyData)
             {
                 case Keys.Control | Keys.D: AddBookmark(false); return true;
@@ -128,7 +130,7 @@ internal sealed partial class PdfReaderForm : Form
                 case Keys.Control | Keys.PageUp: NavigateActive(-1); return true;
                 case Keys.Control | Keys.PageDown: NavigateActive(1); return true;
                 case Keys.Control | Keys.Shift | Keys.H: highlightButton.Checked = !highlightButton.Checked; return true;
-                case Keys.Escape: documentTabs.CancelDrag(); highlightButton.Checked = false; s.Viewer.SetHighlightMode(false); s.Viewer.Focus(); return true;
+                case Keys.Escape: documentTabs.CancelDrag(); highlightButton.Checked = false; s.Viewer.CancelAnnotationOperation(); s.Viewer.Focus(); return true;
             }
         }
         return base.ProcessCmdKey(ref msg, keyData);
@@ -136,7 +138,7 @@ internal sealed partial class PdfReaderForm : Form
 
     private void ShowShortcutHelp()
     {
-        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+H 区域高亮；Esc 返回阅读\r\nCtrl+D 添加用户书签；Ctrl+B 显示/隐藏导航栏\r\n书签树中 F2 重命名，Delete 删除，Enter 跳转\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show(this, "Ctrl+O 打开 PDF\r\nCtrl+S 保存独立数据\r\nCtrl+W 关闭标签\r\nCtrl+Tab / Ctrl+Shift+Tab 切换标签\r\nCtrl+G 输入 PDF 页码，Enter 跳转\r\nCtrl+滚轮 / Ctrl++ / Ctrl+- 缩放（35%～220%）\r\nCtrl+0 原始大小；Ctrl+1 适合整页；Ctrl+2 适合宽度\r\nCtrl+PageUp / Ctrl+PageDown 上一页 / 下一页\r\nCtrl+Home / Ctrl+End 第一页 / 最后一页\r\nCtrl+Shift+A 选择/移动；Ctrl+Shift+H 高亮\r\nCtrl+Shift+U 下划线；Ctrl+Shift+T 文本批注\r\nCtrl+Shift+P 手写；Ctrl+Shift+R 矩形\r\nCtrl+Shift+E 椭圆；Ctrl+Shift+L 直线\r\nF2 属性；Delete 删除；Ctrl+Z/Y 撤销/重做；Esc 取消\r\nCtrl+D 添加用户书签；Ctrl+B 显示/隐藏导航栏\r\n书签树中 F2 重命名，Delete 删除，Enter 跳转\r\nF1 显示快捷键", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void ShowOpenDialog()
@@ -216,6 +218,8 @@ internal sealed partial class PdfReaderForm : Form
             session.Navigation = PdfNavigationReader.Read(fullPath);
             session.Thumbnails = new DocumentThumbnails(session.PdfDocument, count);
             session.Viewer.Links = session.Navigation.Links;
+            session.TextSource=new PdfTextRegions(fullPath);
+            session.Viewer.AnnotationLayer.TextRegions=session.TextSource.GetRegions;
             BindSession(session);
             session.Viewer.SetHighlightMode(highlightButton.Checked);
 
@@ -243,28 +247,6 @@ internal sealed partial class PdfReaderForm : Form
         {
             MessageBox.Show(this, "无法打开 PDF。\r\n\r\n" + Unwrap(ex).Message, "打开失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-    }
-
-    private void AddHighlight(DocumentSession session, HighlightCreatedEventArgs e)
-    {
-        RectangleF bounds = e.NormalizedBounds;
-        AreaHighlight annotation = new AreaHighlight
-        {
-            id = Guid.NewGuid().ToString("N"),
-            type = "area_highlight",
-            pageIndex = e.PageIndex,
-            coordinateSpace = "normalized_page",
-            x = Math.Round(bounds.X, 8),
-            y = Math.Round(bounds.Y, 8),
-            width = Math.Round(bounds.Width, 8),
-            height = Math.Round(bounds.Height, 8),
-            color = "#FFFF66",
-            createdUtc = DateTime.UtcNow.ToString("o")
-        };
-        session.Annotations.Add(annotation);
-        session.Viewer.SetAnnotations(session.Annotations);
-        MarkDirty(session);
-        SaveSession(session);
     }
 
     private void ReadingPositionChanged(DocumentSession session, ReadingPositionEventArgs e)
@@ -312,7 +294,7 @@ internal sealed partial class PdfReaderForm : Form
 
     private void HighlightModeChanged(object sender, EventArgs e)
     {
-        foreach (DocumentSession session in sessions) session.Viewer.SetHighlightMode(highlightButton.Checked);
+        if(!syncingAnnotationTools) ActiveSession?.Viewer.SetAnnotationTool(highlightButton.Checked?AnnotationTool.Highlight:AnnotationTool.Select);
     }
 
     private void RestoreSessionPosition(DocumentSession session)
@@ -409,7 +391,7 @@ internal sealed partial class PdfReaderForm : Form
         catch (Exception ex)
         {
             UpdateTabTitle(session);
-            if (ActiveSession == session) SetStatus("保存失败：请重试", Color.FromArgb(180, 35, 24));
+            if (ActiveSession == session) SetStatus("保存失败", Color.FromArgb(180, 35, 24));
             MessageBox.Show(this, "无法保存独立数据文件。原 PDF 未被修改，当前修改仍保留在内存中。\r\n\r\n" + Unwrap(ex).Message,
                 "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
@@ -440,7 +422,7 @@ internal sealed partial class PdfReaderForm : Form
             pageTotalLabel.Text = "/ -";
             zoomLabel.Text = "82%";
             AccessibleDescription = "请打开 PDF";
-            highlightButton.Checked = false;
+            SyncAnnotationControls();
             SetStatus("未打开文档", Color.FromArgb(82, 96, 109));
             Text = "PDF 阅读器";
             return;
@@ -452,7 +434,7 @@ internal sealed partial class PdfReaderForm : Form
         pageTotalLabel.Text = "/ " + session.PageCount;
         zoomLabel.Text = Math.Round(session.Viewer.Zoom * 100).ToString() + "%";
         AccessibleDescription = session.PdfPath;
-        highlightButton.Checked = session.Viewer.HighlightMode;
+        SyncAnnotationControls();
         Text = "PDF 阅读器 - " + Path.GetFileName(session.PdfPath);
         SetStatus(session.Dirty ? "未保存" : "已保存", session.Dirty ? Color.FromArgb(180, 83, 9) : Color.FromArgb(24, 121, 78));
         previousButton.Enabled = page > 0;
@@ -481,6 +463,7 @@ internal sealed partial class PdfReaderForm : Form
         documentTabs.TabPages.Remove(session.Tab);
         session.Viewer.Dispose();
         session.Thumbnails?.Dispose();
+        session.TextSource?.Dispose();
         WindowsPdfRenderer.DisposeDocument(session.PdfDocument);
         session.Tab.Dispose();
         UpdateToolbar(ActiveSession);
@@ -513,6 +496,7 @@ internal sealed partial class PdfReaderForm : Form
             UnbindSession(session);
             session.Viewer.Dispose();
             session.Thumbnails?.Dispose();
+            session.TextSource?.Dispose();
             WindowsPdfRenderer.DisposeDocument(session.PdfDocument);
         }
         sessions.Clear();

@@ -5,18 +5,6 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 
-internal sealed class HighlightCreatedEventArgs : EventArgs
-{
-    public int PageIndex { get; private set; }
-    public RectangleF NormalizedBounds { get; private set; }
-
-    public HighlightCreatedEventArgs(int pageIndex, RectangleF normalizedBounds)
-    {
-        PageIndex = pageIndex;
-        NormalizedBounds = normalizedBounds;
-    }
-}
-
 internal sealed class ReadingPositionEventArgs : EventArgs
 {
     public int PageIndex { get; private set; }
@@ -29,7 +17,7 @@ internal sealed class ReadingPositionEventArgs : EventArgs
     }
 }
 
-internal sealed class ContinuousPdfViewer : ScrollableControl
+internal sealed partial class ContinuousPdfViewer : ScrollableControl
 {
     private const int OuterMargin = 30;
     private const int PageGap = 34;
@@ -43,30 +31,25 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
     private int currentPage = -1;
     private int contentWidth;
     private bool layoutInProgress;
-    private bool highlightMode;
     private bool active;
-    private bool dragging;
     private int zoomWheelRemainder;
-    private int dragPage = -1;
-    private Point dragStart;
-    private Point dragEnd;
 
     public List<PageLink> Links = new List<PageLink>();
     public event EventHandler<NavigationTarget> LinkActivated;
 
-    public event EventHandler<HighlightCreatedEventArgs> HighlightCreated;
     public event EventHandler<ReadingPositionEventArgs> ReadingPositionChanged;
     public event EventHandler<int> ActivePageChanged;
 
     public int PageCount { get { return pageBounds.Count; } }
     public int CurrentPage { get { return Math.Max(0, currentPage); } }
     public float Zoom { get { return zoom; } }
-    public bool HighlightMode { get { return highlightMode; } }
+    public bool HighlightMode { get { return AnnotationLayer.Tool==AnnotationTool.Highlight; } }
     public Size ContentSize { get { return AutoScrollMinSize; } }
     public IList<Rectangle> PageRectangles { get { return pageBounds.AsReadOnly(); } }
 
     public ContinuousPdfViewer()
     {
+        InitializeAnnotationLayer();
         AutoScroll = true;
         BackColor = Color.FromArgb(233, 237, 242);
         DoubleBuffered = true;
@@ -79,6 +62,7 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
         pdfDocument = document;
         zoom = ClampZoom(initialZoom);
         annotations = marks ?? new List<AreaHighlight>();
+        AnnotationLayer.SetMarks(annotations);
         pageSizes.Clear();
         pageBounds.Clear();
         for (int i = 0; i < count; i++)
@@ -90,15 +74,11 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
     public void SetAnnotations(List<AreaHighlight> marks)
     {
         annotations = marks ?? new List<AreaHighlight>();
+        AnnotationLayer.SetMarks(annotations);
         Invalidate();
     }
 
-    public void SetHighlightMode(bool enabled)
-    {
-        if (!enabled && dragging) { dragging = false; dragPage = -1; Capture = false; Invalidate(); }
-        highlightMode = enabled;
-        Cursor = enabled ? Cursors.Cross : Cursors.Default;
-    }
+    public void SetHighlightMode(bool enabled) { SetAnnotationTool(enabled?AnnotationTool.Highlight:AnnotationTool.Select); }
 
     public void SetActive(bool value)
     {
@@ -290,89 +270,19 @@ internal sealed class ContinuousPdfViewer : ScrollableControl
                 }
             }
 
-            foreach (AreaHighlight mark in annotations)
-            {
-                if (mark.pageIndex != i) continue;
-                RectangleF rect = new RectangleF(
-                    page.Left + (float)(mark.x * page.Width),
-                    page.Top + (float)(mark.y * page.Height),
-                    Math.Max(2, (float)(mark.width * page.Width)),
-                    Math.Max(2, (float)(mark.height * page.Height)));
-                using (Brush fill = new SolidBrush(Color.FromArgb(112, 255, 230, 75)))
-                using (Pen outline = new Pen(Color.FromArgb(215, 220, 158, 20), 1))
-                {
-                    e.Graphics.FillRectangle(fill, rect);
-                    e.Graphics.DrawRectangle(outline, rect.X, rect.Y, rect.Width, rect.Height);
-                }
-            }
-        }
-
-        if (dragging && dragPage >= 0 && dragPage < pageBounds.Count)
-        {
-            Rectangle page = pageBounds[dragPage];
-            Rectangle selection = MakeRectangle(dragStart, dragEnd);
-            selection.Intersect(page);
-            using (Brush fill = new SolidBrush(Color.FromArgb(85, 255, 210, 65)))
-            using (Pen outline = new Pen(Color.FromArgb(230, 218, 152, 15), 1))
-            {
-                e.Graphics.FillRectangle(fill, selection);
-                e.Graphics.DrawRectangle(outline, selection);
-            }
+            AnnotationLayer.Paint(e.Graphics,page,i,zoom);
         }
         e.Graphics.Restore(saved);
     }
-
     protected override void OnMouseDown(MouseEventArgs e)
     {
-        base.OnMouseDown(e);
-        Focus();
-        if (e.Button == MouseButtons.Left && !highlightMode)
-        {
-            PageLink link=LinkAt(e.Location);
-            if(link != null) LinkActivated?.Invoke(this,link.Target);
-            return;
-        }
-        if (e.Button != MouseButtons.Left || !highlightMode || pageBounds.Count == 0) return;
-        Point contentPoint = ToContentPoint(e.Location);
-        dragPage = FindPageAt(contentPoint);
-        if (dragPage < 0) return;
-        dragging = true;
-        dragStart = contentPoint;
-        dragEnd = contentPoint;
-        Capture = true;
-        Invalidate();
+        base.OnMouseDown(e);Focus();
+        if(e.Button!=MouseButtons.Left && e.Button!=MouseButtons.Right)return;
+        if(!BeginAnnotation(e) && e.Button==MouseButtons.Left && AnnotationLayer.Tool==AnnotationTool.Select)
+        { var link=LinkAt(e.Location);if(link!=null)LinkActivated?.Invoke(this,link.Target); }
     }
-
-    protected override void OnMouseMove(MouseEventArgs e)
-    {
-        base.OnMouseMove(e);
-        if (!highlightMode) Cursor = LinkAt(e.Location) != null ? Cursors.Hand : Cursors.Default;
-        if (!dragging) return;
-        dragEnd = ToContentPoint(e.Location);
-        Invalidate();
-    }
-
-    protected override void OnMouseUp(MouseEventArgs e)
-    {
-        base.OnMouseUp(e);
-        if (!dragging || e.Button != MouseButtons.Left) return;
-        dragging = false;
-        Capture = false;
-        dragEnd = ToContentPoint(e.Location);
-        Rectangle bounds = MakeRectangle(dragStart, dragEnd);
-        Rectangle page = pageBounds[dragPage];
-        bounds.Intersect(page);
-        Invalidate();
-        if (bounds.Width < 3 || bounds.Height < 3 || page.Width <= 0 || page.Height <= 0) return;
-        RectangleF normalized = new RectangleF(
-            (float)(bounds.X - page.X) / page.Width,
-            (float)(bounds.Y - page.Y) / page.Height,
-            (float)bounds.Width / page.Width,
-            (float)bounds.Height / page.Height);
-        EventHandler<HighlightCreatedEventArgs> handler = HighlightCreated;
-        if (handler != null) handler(this, new HighlightCreatedEventArgs(dragPage, normalized));
-        dragPage = -1;
-    }
+    protected override void OnMouseMove(MouseEventArgs e){base.OnMouseMove(e);MoveAnnotation(e);}
+    protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);EndAnnotation(e);}
 
     protected override void Dispose(bool disposing)
     {

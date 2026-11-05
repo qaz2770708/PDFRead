@@ -35,18 +35,24 @@ internal sealed partial class PdfReaderForm
     }
     private void BindSession(DocumentSession s)
     {
-        s.HighlightHandler = delegate(object sender, HighlightCreatedEventArgs e) { AddHighlight(s, e); };
+        s.AnnotationHandler = delegate { MarkDirty(s); SaveSession(s); SyncAnnotationControls(); };
+        s.SelectionHandler = delegate { if(ActiveSession==s)SyncAnnotationControls(); };
+        s.EditHandler = delegate(object sender,AnnotationEditEventArgs e) { e.Cancel=!EditAnnotationProperties(s,e.Annotation); };
         s.PageHandler = delegate(object sender, int page) { ActivePageChanged(s, page); };
         s.PositionHandler = delegate(object sender, ReadingPositionEventArgs e) { ReadingPositionChanged(s, e); };
         s.LinkHandler = delegate(object sender, NavigationTarget target) { NavigateTarget(s, target); };
-        s.Viewer.HighlightCreated += s.HighlightHandler;
+        s.Viewer.AnnotationsChanged += s.AnnotationHandler;
+        s.Viewer.AnnotationSelectionChanged += s.SelectionHandler;
+        s.Viewer.AnnotationEditRequested += s.EditHandler;
         s.Viewer.ActivePageChanged += s.PageHandler;
         s.Viewer.ReadingPositionChanged += s.PositionHandler;
         s.Viewer.LinkActivated += s.LinkHandler;
     }
     private void UnbindSession(DocumentSession s)
     {
-        s.Viewer.HighlightCreated -= s.HighlightHandler;
+        s.Viewer.AnnotationsChanged -= s.AnnotationHandler;
+        s.Viewer.AnnotationSelectionChanged -= s.SelectionHandler;
+        s.Viewer.AnnotationEditRequested -= s.EditHandler;
         s.Viewer.ActivePageChanged -= s.PageHandler;
         s.Viewer.ReadingPositionChanged -= s.PositionHandler;
         s.Viewer.LinkActivated -= s.LinkHandler;

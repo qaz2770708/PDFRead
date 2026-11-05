@@ -1,42 +1,32 @@
 # PDFRead
 
-PDFRead 是一个 Windows 桌面 PDF 阅读器原型，使用 WinForms 和 Windows 自带的 PDF 页面渲染 API。源 PDF 以只读方式打开；阅读状态和标注写入同目录的独立 `.pdfdata` 文件。
+Windows 桌面 PDF 阅读器。PDF 页面由 Windows PDF API 只读渲染，注释层独立绘制，阅读进度、书签和注释保存于 **EXE 根目录的 data 文件夹**，原 PDF 不修改。
 
-## 当前完成范围
+## 当前功能
 
-- 连续纵向阅读，滚动到一页末尾后直接接续下一页；不同尺寸页面在阅读区水平居中。
-- 多 PDF 标签页，同一路径重复打开时切换到已有标签。
-- 顶部仅保留打开按钮；页码、缩放、高亮、保存状态等集中到右侧悬浮工具，默认透明度 60%，悬停时变清晰。
-- 右侧目录/书签/缩略图导航可显示和收起；目录章节有目标页预览，全部页面缩略图可点击跳转，按可见范围渐进渲染。
-- 每个标签右侧有关闭 X；双击关闭、按住拖动排序、拖出当前窗口后松开创建独立窗口。转移原会话和未保存数据，关闭原窗口不影响新窗口。
-- 为每份 PDF 单独记录 SHA-256 版本、当前页、页内纵向位置、缩放比例和区域高亮。
-- 将 `文件名.pdf` 与 `文件名.pdfdata` 配对；PDF 内容哈希变化时询问新建版本数据，或显式确认沿用旧注释。
-- 自动保存阅读位置、标注立即保存、手动保存按钮、保存失败状态和错误提示；关闭时保存失败会阻止关闭。
-- 崩溃恢复：识别较新的完整 `.tmp` 文件或 `.bak` 备份；恢复前询问，并保留被选中的恢复副本。
-- 支持 Ctrl+滚轮定位缩放及常用阅读快捷键，按 F1 查看。
-- PDF 内嵌分层目录和页内内部链接可点击跳转到实际 PDF 页码；支持命名目标和旋转页坐标。
-- 用户书签支持添加、重命名、更新位置、删除子树、调整层级和同级顺序；记录页内位置及缩放，各文档独立保存。
-- 将 v1/v2 `.pdfdata` 自动升级到 v3，保留阅读进度、标注和版本记录。
-- 当前可创建区域高亮。其他标注类型、便签、完整编辑工具和导出带注释 PDF 尚未实现。
+- 连续居中阅读、多标签、页码跳转、Ctrl+滚轮定位缩放；标签支持 X/双击关闭、拖动排序和拖出独立窗口。
+- 右侧悬浮工具占阅读区高度 80%，上下各留 10%，8 组工具均匀分布；默认透明度 60%，悬停和页码输入时变清晰。
+- 可收起的纯文字 PDF 目录、独立页面缩略图、分层用户书签；各窗口独立，关闭原窗口不影响已拖出的文档。
+- 高亮、下划线、文本批注、手写、矩形、椭圆、直线：均可新增、选择、修改属性、移动、缩放、删除；支持最多 30 步注释撤销/重做。
+- 高亮和下划线保存所选文字区域的四边形；扫描页或文本解析失败时采用区域标注。手写保存笔迹点列，所有坐标均相对页面，与屏幕像素无关。
+- 相同 PDF 内容复用 data/<sha256>.pdfdata，重开恢复页码、页内位置和缩放，不再为相同内容新建文件。原路径内容改变时询问新建或沿用旧版本数据。
+- 自动导入 PDF 旁边的旧版数据，保留旧文件；后续仅写集中目录。格式 v1/v2/v3 升级为 v4，保留进度、书签、注释。原子保存、固定备份和崩溃恢复沿用既有规则。
 
-## 构建和运行
+便签、导出带注释 PDF 和 OCR 尚未开发。
 
-在 Windows 上安装 .NET SDK 与 .NET Framework 4.8 targeting pack，然后运行：
+## 构建与运行
 
-```powershell
-.\build.ps1
-```
+安装 .NET SDK 和 .NET Framework 4.8 targeting pack 后运行 `./build.ps1`。若旧程序占用默认构建文件，可用 `./build.ps1 -BuildOutputPath work/release-m4` 构建到隔离目录。首次构建需要 NuGet 还原依赖。
 
-构建完成后，在 `outputs/` 运行 `PDFReader.exe`。发行包 `outputs/PDFReader-M3.1.zip` 同时包含配置文件、所有运行依赖和目录示例 PDF。也可在命令行把 PDF 文件路径作为程序参数传入。运行中的旧程序占用默认构建目录时，可用 `./build.ps1 -BuildOutputPath work/release-ui` 构建到隔离目录并更新 outputs。
+运行 outputs/PDFReader.exe，保留所有 DLL 和配置文件。`./package.ps1` 生成 outputs/PDFReader-M4.zip，`-NoBuild` 仅打包已有 outputs 发行文件。data 必须可写；程序不会回退到 PDF 所在目录生成数据文件。迁移电脑时复制整个 data 目录及 PDF。
 
-## 数据与兼容性
+## 验证与文档
 
-对于 `report.pdf`，程序在同目录使用 `report.pdfdata`。一个 sidecar 可以含同一路径下多个 PDF 内容版本的记录，每个版本通过 SHA-256 区分。保存过程写入临时文件，再原子替换正式文件，并保留最近一次有效备份。PDF 本身不被修改。
+运行 `./test.ps1` 执行五组 Windows 集成验收；依赖已还原时可加 `-NoRestore`。测试只写工作区中独立生成的样例副本。
 
-验证步骤与结果见 [docs/M2-validation.md](docs/M2-validation.md)。
+- [集中数据与迁移规则](docs/data-storage.md)
+- [快捷键](docs/shortcuts.md)
+- [第四步验收及边界](docs/M4-validation.md)
+- [第三方许可](docs/THIRD-PARTY-NOTICES.md)
 
-快捷键见 [docs/shortcuts.md](docs/shortcuts.md)，第三步验收见 [docs/M3-validation.md](docs/M3-validation.md)。在 Windows 上运行 `./test.ps1` 可复现集成验收，测试仅写入工作区内生成的样例副本。
-
-PDF 目录解析使用 PDFsharp-GDI 6.2.4（MIT），渲染继续使用 Windows PDF API。第三方许可见 [docs/THIRD-PARTY-NOTICES.md](docs/THIRD-PARTY-NOTICES.md)。
-
-运行 `./package.ps1` 可生成新版 ZIP，使用 `-NoBuild` 可打包已构建的 outputs 发行文件。界面与多窗口验收见 [docs/UI-validation.md](docs/UI-validation.md)。
+渲染使用 Windows PDF API；目录/内部链接由 PDFsharp-GDI 6.2.4（MIT）解析，文字位置由 PdfPig 0.1.16（Apache-2.0）解析，均不调用 PDF 写入接口。docs 内 M2/M3/UI-validation 为历史里程碑记录，当前行为以本文件和 M4-validation 为准。

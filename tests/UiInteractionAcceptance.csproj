@@ -13,6 +13,7 @@
     <Compile Include="../src/*.cs" />
     <Compile Include="UiInteractionAcceptance.cs" />
     <PackageReference Include="PDFsharp-GDI" Version="6.2.4" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Runtime.WindowsRuntime">
       <HintPath>$(SystemRoot)/Microsoft.NET/Framework64/v4.0.30319/System.Runtime.WindowsRuntime.dll</HintPath>
