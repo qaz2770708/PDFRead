@@ -2,6 +2,7 @@ bin/
 obj/
 .vs/
 work/
+data/
 *.pdfdata
 *.pdfdata.bak
 *.pdfdata.tmp

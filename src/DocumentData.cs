@@ -10,7 +10,7 @@ using System.Windows.Forms;
 [Serializable]
 internal sealed class SidecarFile
 {
-    public int formatVersion { get; set; } = 3;
+    public int formatVersion { get; set; } = 4;
     public int revision { get; set; }
     public List<VersionRecord> versions { get; set; } = new List<VersionRecord>();
     public string lastSavedUtc { get; set; }
@@ -24,6 +24,7 @@ internal sealed class VersionRecord
     public int pageCount { get; set; }
     public int lastPage { get; set; }
     public double lastPageOffset { get; set; }
+    public double lastPageHorizontal { get; set; }
     public float zoom { get; set; } = 0.82f;
     public List<AreaHighlight> annotations { get; set; } = new List<AreaHighlight>();
     public List<UserBookmark> bookmarks { get; set; } = new List<UserBookmark>();
@@ -77,6 +78,8 @@ internal sealed class DocumentSession
     public EventHandler<ReadingPositionEventArgs> PositionHandler;
     public EventHandler<NavigationTarget> LinkHandler;
     public bool Dirty;
+    public bool Restoring;
+    public List<string> KnownPaths = new List<string>();
     public bool ModifiedByRecoveryOrMigration;
 }
 
@@ -87,9 +90,9 @@ internal sealed class SidecarLoadResult
     public bool NeedsSave;
 }
 
-internal static class DocumentDataRepository
+internal static partial class DocumentDataRepository
 {
-    private const int CurrentFormatVersion = 3;
+    private const int CurrentFormatVersion = 4;
     private static readonly JavaScriptSerializer Serializer = new JavaScriptSerializer
     {
         MaxJsonLength = Int32.MaxValue,
@@ -106,7 +109,8 @@ internal static class DocumentDataRepository
     public static SidecarLoadResult LoadForPdf(string pdfPath, string hash, int pageCount, IWin32Window owner,
         Func<string, string, DialogResult> confirm = null)
     {
-        string sidecarPath = Path.ChangeExtension(pdfPath, ".pdfdata");
+        string canonical = GetDataPath(hash);
+        string sidecarPath = FindExistingData(pdfPath, hash);
         string temporaryPath = sidecarPath + ".tmp";
         string backupPath = sidecarPath + ".bak";
         string parseError;
@@ -119,7 +123,7 @@ internal static class DocumentDataRepository
         bool backupMigrated = migrated;
 
         SidecarFile data = main;
-        bool needsSave = mainMigrated;
+        bool needsSave = mainMigrated || !String.Equals(sidecarPath, canonical, StringComparison.OrdinalIgnoreCase);
         bool mainWasPresent = File.Exists(sidecarPath);
         if (main != null)
         {
@@ -156,7 +160,8 @@ internal static class DocumentDataRepository
                 needsSave = true;
                 try
                 {
-                    string preserved = sidecarPath + (chooseTemporary ? ".recovered.tmp" : ".recovered.bak");
+                    Directory.CreateDirectory(DataRoot);
+                    string preserved = canonical + (chooseTemporary ? ".recovered.tmp" : ".recovered.bak");
                     File.Copy(candidatePath, preserved, true);
                 }
                 catch (Exception ex)
@@ -229,11 +234,14 @@ internal static class DocumentDataRepository
         record.lastPage = Math.Max(0, Math.Min(record.lastPage, pageCount - 1));
         record.lastPageOffset = Math.Max(0, Math.Min(1, record.lastPageOffset));
         record.zoom = Math.Max(0.35f, Math.Min(2.2f, record.zoom <= 0 ? 0.82f : record.zoom));
+        if (!needsSave && File.Exists(canonical)) RegisterLocation(pdfPath, hash);
         return new SidecarLoadResult { Data = data, Record = record, NeedsSave = needsSave };
     }
 
     public static void Save(DocumentSession session)
     {
+        Directory.CreateDirectory(DataRoot);
+        session.SidecarPath = GetDataPath(session.PdfHash);
         session.Data.revision++;
         session.Data.lastSavedUtc = DateTime.UtcNow.ToString("o");
         session.Record.updatedUtc = session.Data.lastSavedUtc;
@@ -255,6 +263,8 @@ internal static class DocumentDataRepository
         {
             File.Move(temporaryPath, session.SidecarPath);
         }
+        RegisterLocation(session.PdfPath, session.PdfHash);
+        foreach (string alias in session.KnownPaths) RegisterLocation(alias, session.PdfHash);
     }
 
     private static SidecarFile TryRead(string path, out bool migrated, out string error)
@@ -266,7 +276,7 @@ internal static class DocumentDataRepository
         {
             SidecarFile data = Serializer.Deserialize<SidecarFile>(File.ReadAllText(path, Encoding.UTF8));
             if (data == null) throw new InvalidDataException("数据文件为空。");
-            if (data.formatVersion == 1 || data.formatVersion == 2)
+            if (data.formatVersion >= 1 && data.formatVersion < CurrentFormatVersion)
             {
                 data.formatVersion = CurrentFormatVersion;
                 data.revision = Math.Max(0, data.revision);

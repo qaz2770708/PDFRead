@@ -8,7 +8,7 @@ internal sealed partial class PdfReaderForm
 {
     private readonly SplitContainer navigationSplit = new SplitContainer { Dock = DockStyle.Fill, Width = 1120, SplitterDistance = 810, Panel1MinSize = 300, Panel2MinSize = 260, Panel2Collapsed = true, FixedPanel = FixedPanel.Panel2 };
     private readonly TabControl navigationTabs = new TabControl { Dock = DockStyle.Fill };
-    private readonly TreeView outlineTree = new OutlinePreviewTree { Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true };
+    private readonly TreeView outlineTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true };
     private readonly TreeView bookmarkTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false, LabelEdit = true, ShowNodeToolTips = true };
     private readonly Label outlineMessage = new Label { Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(260,0), Padding = new Padding(6) };
     private readonly ToolStrip bookmarkTools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top };
@@ -33,13 +33,6 @@ internal sealed partial class PdfReaderForm
         navigationTabs.TabPages.Add(pdf); navigationTabs.TabPages.Add(user);
         TabPage pages = new TabPage("缩略图"); pages.Controls.Add(thumbnailView); navigationTabs.TabPages.Add(pages);
         thumbnailView.PageSelected += delegate(object sender, int page) { var s = ActiveSession; if (s != null) { s.Viewer.GoToPage(page, 0); s.Viewer.Focus(); } };
-        outlineTree.DrawMode = TreeViewDrawMode.OwnerDrawAll;
-        outlineTree.ItemHeight = 112;
-        outlineTree.Indent = 16;
-        outlineTree.FullRowSelect = true;
-        outlineTree.ShowLines = false;
-        outlineTree.ShowPlusMinus = false;
-        outlineTree.DrawNode += DrawOutlineThumbnail;
         thumbnailTimer.Tick += delegate { RenderNavigationThumbnail(); };
         thumbnailTimer.Start();
         navigationTabs.SelectedIndexChanged += delegate { UpdateNavigationButtons(); };
@@ -55,8 +48,7 @@ internal sealed partial class PdfReaderForm
         outlineTree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
-            if (e.Node.Nodes.Count > 0 && e.X < e.Node.Level * 16 + 16) e.Node.Toggle();
-            else ActivateOutline(e.Node);
+            if (e.X >= e.Node.Bounds.Left) ActivateOutline(e.Node);
         };
         outlineTree.KeyDown += delegate(object sender, KeyEventArgs e) { if(e.KeyCode==Keys.Enter) { ActivateOutline(outlineTree.SelectedNode); e.SuppressKeyPress=true; } };
         bookmarkTree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e) { if(e.Button==MouseButtons.Left) ActivateBookmark(e.Node); };

@@ -165,6 +165,15 @@ internal sealed partial class PdfReaderForm : Form
                 return;
             }
             string hash = DocumentDataRepository.CalculateSha256(fullPath);
+            PdfReaderForm hashWindow = WindowHost?.Windows.FirstOrDefault(w => w.sessions.Any(s => s.PdfHash == hash));
+            DocumentSession sameHash = (hashWindow ?? this).sessions.FirstOrDefault(s => s.PdfHash == hash);
+            if (sameHash != null)
+            {
+                sameHash.KnownPaths.Add(fullPath);
+                if (File.Exists(DocumentDataRepository.GetDataPath(hash))) DocumentDataRepository.RegisterLocation(fullPath, hash);
+                var owner = hashWindow ?? this;
+                owner.documentTabs.SelectedTab = sameHash.Tab; owner.Activate(); return;
+            }
             DocumentSession samePath = sessions.FirstOrDefault(s => String.Equals(s.PdfPath, fullPath, StringComparison.OrdinalIgnoreCase));
             if (samePath != null && String.Equals(samePath.PdfHash, hash, StringComparison.OrdinalIgnoreCase))
             {
@@ -192,14 +201,16 @@ internal sealed partial class PdfReaderForm : Form
                 PdfDocument = pdf,
                 PdfPath = fullPath,
                 PdfHash = hash,
-                SidecarPath = Path.ChangeExtension(fullPath, ".pdfdata"),
+                SidecarPath = DocumentDataRepository.GetDataPath(hash),
                 PageCount = count,
                 Data = loaded.Data,
                 Record = loaded.Record,
                 Annotations = loaded.Record.annotations ?? new List<AreaHighlight>(),
                 Dirty = loaded.NeedsSave,
-                ModifiedByRecoveryOrMigration = loaded.NeedsSave
+                ModifiedByRecoveryOrMigration = loaded.NeedsSave,
+                Restoring = true
             };
+            session.KnownPaths.Add(fullPath);
             session.Viewer = new ContinuousPdfViewer { Dock = DockStyle.Fill };
             session.Viewer.Configure(session.PdfDocument, count, session.Record.zoom, session.Annotations);
             session.Navigation = PdfNavigationReader.Read(fullPath);
@@ -224,7 +235,7 @@ internal sealed partial class PdfReaderForm : Form
             BeginInvoke((Action)delegate
             {
                 if (!sessions.Contains(session)) return;
-                session.Viewer.GoToPage(session.Record.lastPage, session.Record.lastPageOffset);
+                RestoreSessionPosition(session);
                 if (session.ModifiedByRecoveryOrMigration) SaveSession(session);
             });
         }
@@ -258,15 +269,17 @@ internal sealed partial class PdfReaderForm : Form
 
     private void ReadingPositionChanged(DocumentSession session, ReadingPositionEventArgs e)
     {
-        if (movingSession || documentTabs.Reordering) return;
+        if (movingSession || documentTabs.Reordering || session.Restoring || ActiveSession != session) return;
         if (ActiveSession == session) zoomLabel.Text = Math.Round(session.Viewer.Zoom * 100) + "%";
         bool changed = e.PageIndex != session.Record.lastPage ||
             Math.Abs(e.PageOffset - session.Record.lastPageOffset) > 0.001 ||
-            Math.Abs(session.Viewer.Zoom - session.Record.zoom) > 0.001f;
+            Math.Abs(session.Viewer.Zoom - session.Record.zoom) > 0.001f ||
+            Math.Abs(session.Viewer.CaptureHorizontalPosition() - session.Record.lastPageHorizontal) > 0.001;
         if (!changed) return;
         session.Record.lastPage = e.PageIndex;
         session.Record.lastPageOffset = e.PageOffset;
         session.Record.zoom = session.Viewer.Zoom;
+        session.Record.lastPageHorizontal = session.Viewer.CaptureHorizontalPosition();
         if (!session.Dirty) MarkDirty(session);
         pendingProgressSaves.Add(session);
         progressSaveTimer.Stop();
@@ -292,7 +305,7 @@ internal sealed partial class PdfReaderForm : Form
         UpdateToolbar(active);
         if (active != null)
         {
-            active.Viewer.GoToPage(active.Record.lastPage, active.Record.lastPageOffset);
+            if (!active.Restoring) RestoreSessionPosition(active);
             active.Viewer.Focus();
         }
     }
@@ -300,6 +313,21 @@ internal sealed partial class PdfReaderForm : Form
     private void HighlightModeChanged(object sender, EventArgs e)
     {
         foreach (DocumentSession session in sessions) session.Viewer.SetHighlightMode(highlightButton.Checked);
+    }
+
+    private void RestoreSessionPosition(DocumentSession session)
+    {
+        int page = session.Record.lastPage;
+        double offset = session.Record.lastPageOffset, horizontal = session.Record.lastPageHorizontal;
+        float zoom = session.Record.zoom;
+        session.Restoring = true;
+        try
+        {
+            if (Math.Abs(session.Viewer.Zoom - zoom) > .001f) session.Viewer.SetZoom(zoom);
+            session.Viewer.GoToLocation(page, offset, horizontal);
+        }
+        finally { session.Restoring = false; }
+        if (session == ActiveSession) UpdateToolbar(session);
     }
 
     private void NavigateActive(int delta)
@@ -355,13 +383,17 @@ internal sealed partial class PdfReaderForm : Form
 
     private bool SaveSession(DocumentSession session)
     {
-        if (session == null || !session.Dirty) return true;
+        if (session == null || !session.Dirty || session.Restoring) return true;
         int page;
         double offset;
-        session.Viewer.CaptureReadingPosition(out page, out offset);
-        session.Record.lastPage = page;
-        session.Record.lastPageOffset = offset;
-        session.Record.zoom = session.Viewer.Zoom;
+        if (session == ActiveSession)
+        {
+            session.Viewer.CaptureReadingPosition(out page, out offset);
+            session.Record.lastPage = page;
+            session.Record.lastPageOffset = offset;
+            session.Record.lastPageHorizontal = session.Viewer.CaptureHorizontalPosition();
+            session.Record.zoom = session.Viewer.Zoom;
+        }
         session.Record.annotations = session.Annotations.ToList();
         if (ActiveSession == session) SetStatus("保存中…", Color.FromArgb(52, 64, 84));
         try

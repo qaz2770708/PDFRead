@@ -16,10 +16,11 @@ internal static class M2VerificationProbe
         {
             string source = Path.GetFullPath(args[0]);
             string folder = Path.GetFullPath(Path.Combine("work","storage-"+Guid.NewGuid().ToString("N")));Directory.CreateDirectory(folder);
+            DocumentDataRepository.DataRootOverride=Path.Combine(folder,"data");
             string pdfPath=Path.Combine(folder,"continuous.pdf");File.Copy(source,pdfPath);
             string copyPath = Path.Combine(Path.GetDirectoryName(pdfPath), "multipage-copy.pdf");
             string legacyPath = Path.Combine(Path.GetDirectoryName(pdfPath), "legacy-copy.pdf");
-            File.Copy(pdfPath, copyPath, true);
+            File.Copy(pdfPath, copyPath, true);File.AppendAllText(copyPath,"\n% distinct tab\n");
             File.Copy(pdfPath, legacyPath, true);
             string beforeHash = Hash(pdfPath);
 
@@ -84,7 +85,7 @@ internal static class M2VerificationProbe
 
     private static void VerifySidecarProgressAndRecovery(string path, string hash)
     {
-        string sidecar = Path.ChangeExtension(path, ".pdfdata");
+        string sidecar = DocumentDataRepository.GetDataPath(hash);
         CleanupSidecar(sidecar);
         SidecarLoadResult loaded = DocumentDataRepository.LoadForPdf(path, hash, 3, null);
         Require(loaded != null && loaded.NeedsSave, "A new PDF did not receive an initial data record.");
@@ -143,7 +144,7 @@ internal static class M2VerificationProbe
             "\",\"sourceName\":\"legacy-copy.pdf\",\"pageCount\":3,\"lastPage\":2,\"annotations\":[]}]}";
         File.WriteAllText(sidecar, legacy);
         SidecarLoadResult migrated = DocumentDataRepository.LoadForPdf(path, hash, 3, null);
-        Require(migrated.NeedsSave && migrated.Data.formatVersion == 3, "Version 1 data was not migrated to version 3.");
+        Require(migrated.NeedsSave && migrated.Data.formatVersion == 4, "Version 1 data was not migrated to version 4.");
         Require(Math.Abs(migrated.Record.zoom - 0.82f) < 0.001f && migrated.Record.lastPageOffset == 0,
             "Migration did not populate the new progress defaults.");
         DocumentDataRepository.Save(NewSession(path, hash, migrated));
@@ -154,7 +155,7 @@ internal static class M2VerificationProbe
     private static void VerifyHashRecognition(string sourcePath)
     {
         string versionPath = Path.Combine(Path.GetDirectoryName(sourcePath), "hash-version.pdf");
-        string sidecar = Path.ChangeExtension(versionPath, ".pdfdata");
+        string sidecar = DocumentDataRepository.GetDataPath(Hash(sourcePath));
         CleanupSidecar(sidecar);
         File.Copy(sourcePath, versionPath, true);
         string firstHash = Hash(versionPath);
@@ -208,7 +209,7 @@ internal static class M2VerificationProbe
         {
             PdfPath = path,
             PdfHash = hash,
-            SidecarPath = Path.ChangeExtension(path, ".pdfdata"),
+            SidecarPath = DocumentDataRepository.GetDataPath(hash),
             PageCount = 3,
             Data = result.Data,
             Record = result.Record,

@@ -17,6 +17,7 @@
     <Compile Include="src\PDFReaderApp.cs" />
     <Compile Include="src\ContinuousPdfViewer.cs" />
     <Compile Include="src\DocumentData.cs" />
+    <Compile Include="src\CentralDataStore.cs" />
     <Compile Include="src\PdfNavigation.cs" />
     <Compile Include="src\PdfReaderNavigation.cs" />
     <Compile Include="src\DocumentTabs.cs" />

@@ -16,7 +16,7 @@ internal static class IntegrationAcceptance
     {
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         string dir=Path.GetFullPath(Path.Combine("work","acceptance-"+Guid.NewGuid().ToString("N")));Directory.CreateDirectory(dir);
-        string path=Path.Combine(dir,"navigation.pdf"),other=Path.Combine(dir,"other.pdf");File.Copy(args[0],path);File.Copy(args[0],other);
+        string path=Path.Combine(dir,"navigation.pdf"),other=Path.Combine(dir,"other.pdf");File.Copy(args[0],path);File.Copy(args[0],other);File.AppendAllText(other,"\n% distinct second document\n");DocumentDataRepository.DataRootOverride=Path.Combine(dir,"data");
         string hash=DocumentDataRepository.CalculateSha256(path);
         try
         {
@@ -30,10 +30,10 @@ internal static class IntegrationAcceptance
             Check(nav.Outline[0].Children[2].PageIndex==-1,"external target has no false page fallback");
             Check(nav.Links.Count==1 && nav.Links[0].Target.PageIndex==3,"page link resolves named destination");
             var legacy=new SidecarFile { formatVersion=2 };
-            legacy.versions.Add(new VersionRecord {sourceHash=hash,pageCount=4,zoom=1f});
+            legacy.versions.Add(new VersionRecord {sourceHash=DocumentDataRepository.CalculateSha256(other),pageCount=4,zoom=1f});
             File.WriteAllText(Path.ChangeExtension(other,".pdfdata"),new JavaScriptSerializer().Serialize(legacy));
-            var migrated=DocumentDataRepository.LoadForPdf(other,hash,4,null,(a,b)=>DialogResult.Yes);
-            Check(migrated.NeedsSave && migrated.Data.formatVersion==3 && migrated.Record.bookmarks.Count==0,"v2 to v3 migration");
+            var migrated=DocumentDataRepository.LoadForPdf(other,DocumentDataRepository.CalculateSha256(other),4,null,(a,b)=>DialogResult.Yes);
+            Check(migrated.NeedsSave && migrated.Data.formatVersion==4 && migrated.Record.bookmarks.Count==0,"v2 to v4 migration");
         }
         catch(Exception e) { Console.WriteLine(e);return 1; }
         var form=new PdfReaderForm(new[]{path,other});
@@ -84,7 +84,7 @@ internal static class IntegrationAcceptance
                 Call(viewer,"OnMouseUp",new MouseEventArgs(MouseButtons.Left,1,firstPage.Left+130,firstPage.Top+150+viewer.AutoScrollPosition.Y,0));
                 Check(s.Annotations.Count==0,"Escape cancels unfinished highlight");
                 var outline=(TreeView)Field(form,"outlineTree");
-                Call(outline,"OnNodeMouseClick",new TreeNodeMouseClickEventArgs(outline.Nodes[1],MouseButtons.Left,1,5,5));
+                Call(outline,"OnNodeMouseClick",new TreeNodeMouseClickEventArgs(outline.Nodes[1],MouseButtons.Left,1,120,5));
                 Check(viewer.CurrentPage==3 && ((ToolStripTextBox)Field(form,"pageBox")).Text=="4","outline click matches actual PDF page number");
                 Call(outline,"OnNodeMouseClick",new TreeNodeMouseClickEventArgs(outline.Nodes[0],MouseButtons.Left,1,120,5));
                 Check(viewer.CurrentPage==1 && Math.Abs(viewer.Zoom-1.2)<.001,"outline XYZ zoom and page");
@@ -103,10 +103,10 @@ internal static class IntegrationAcceptance
                 viewer.CaptureReadingPosition(out int p,out double off);Check(Math.Abs(off-offset)<.005,"bookmark restores page offset");
                 Press(form,Keys.Control|Keys.S);Check(!s.Dirty,"manual save shortcut");
                 string portable=Path.Combine(dir,"portable");Directory.CreateDirectory(portable);
-                string portablePdf=Path.Combine(portable,"copied.pdf");File.Copy(path,portablePdf);File.Copy(Path.ChangeExtension(path,".pdfdata"),Path.ChangeExtension(portablePdf,".pdfdata"));
+                string portablePdf=Path.Combine(portable,"copied.pdf");File.Copy(path,portablePdf);
                 var paired=DocumentDataRepository.LoadForPdf(portablePdf,hash,4,null,(a,b)=>throw new Exception("Copied hash should not prompt"));
                 Check(paired.Record.bookmarks.Count==2 && paired.Record.bookmarks[1].parentId==parent.id,"copied PDF and sidecar remain paired");
-                Press(form,Keys.Control|Keys.W);Check(sessions.Count==1,"close tab shortcut");Call(form,"OpenPdf",path);
+                Press(form,Keys.Control|Keys.W);Check(sessions.Count==1,"close tab shortcut");Call(form,"OpenPdf",path);Application.DoEvents();
                 sessions=(List<DocumentSession>)Field(form,"sessions");s=sessions.Last();viewer=s.Viewer;
                 Check(s.Record.bookmarks.Count==2 && s.Record.bookmarks[1].title=="Renamed section" && s.Record.bookmarks[1].parentId==s.Record.bookmarks[0].id,"bookmarks survive close and reopen");
                 tree=(TreeView)Field(form,"bookmarkTree");Call(form,"ActivateBookmark",tree.Nodes[0]);Check(viewer.CurrentPage==1,"reopened bookmark jumps");
