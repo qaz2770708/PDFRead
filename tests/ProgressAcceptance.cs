@@ -16,7 +16,7 @@ internal static class ProgressAcceptance
   Check(imported.NeedsSave && imported.Record.lastPage==1,"legacy sidecar detected with progress");
   DocumentDataRepository.Save(new DocumentSession{PdfPath=pdf,PdfHash=hash,Data=imported.Data,Record=imported.Record});
   string canonical=DocumentDataRepository.GetDataPath(hash),snapshot=File.ReadAllText(canonical);
-  Check(File.ReadAllText(legacy)==legacyBytes && imported.Data.formatVersion==4,"legacy preserved and data upgraded in root data folder");
+  Check(File.ReadAllText(legacy)==legacyBytes && imported.Data.formatVersion==5,"legacy preserved and data upgraded in root data folder");
   var context=new ReaderApplicationContext(new[]{pdf});var form=context.Windows[0];var timer=new Timer{Interval=1200};int stage=0;
   timer.Tick+=delegate
   {

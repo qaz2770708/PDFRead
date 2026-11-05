@@ -127,9 +127,16 @@ internal sealed partial class PdfReaderForm
         panel.Controls.Add(label);panel.Controls.Add(strip);
         panel.Resize += delegate
         {
-            int top=Math.Max(0,(panel.Height-46)/2);
+            bool grid=Object.Equals(strip.Tag,"annotation-grid");int header=grid && panel.Height<70?0:18;
+            int top=grid?0:Math.Max(0,(panel.Height-46)/2);label.Visible=header>0;
             label.SetBounds(3,top,Math.Max(1,panel.Width-6),18);
-            strip.SetBounds(0,top+18,panel.Width,28);
+            strip.SetBounds(0,top+header,panel.Width,grid?Math.Max(36,panel.Height-header):28);
+            if(grid)
+            {
+                int cell=Math.Max(18,strip.Height/2-2),width=Math.Max(24,panel.Width/4-4);
+                strip.ImageScalingSize=new Size(Math.Min(24,cell-2),Math.Min(24,cell-2));
+                foreach(ToolStripItem button in strip.Items)button.Size=new Size(width,cell);
+            }
         };
         var host=new ToolStripControlHost(panel) { AutoSize=false, Margin=Padding.Empty, Padding=Padding.Empty };
         int row=toolGroups.Count;toolGroups.Add(host);readingStrip.Items.Add(host);

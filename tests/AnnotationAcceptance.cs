@@ -39,6 +39,7 @@ internal static class AnnotationAcceptance
      {
       int count=s.Annotations.Count;Key(form,Keys.Control|Keys.Shift|keys[i]);Check(layer.Tool==tools[i],"tool selected "+tools[i]);
       Mouse(v,"OnMouseDown",starts[i]);if(tools[i]==AnnotationTool.Ink){Mouse(v,"OnMouseMove",new PointF(.25f,.41f));Mouse(v,"OnMouseMove",new PointF(.31f,.37f));}Mouse(v,"OnMouseMove",ends[i]);Mouse(v,"OnMouseUp",ends[i]);
+      if(tools[i]==AnnotationTool.Text){v.InlineEditor.Input.Text="文本批注示例";v.FinishInlineEditing();}
       Check(s.Annotations.Count==count+1,"create "+tools[i]);var mark=layer.Selected;string id=mark.id;
       if(i<2)Check(mark.textRegions.Count>0 && Disk(s).Last().textRegions.Count>0,"highlights and underlines store glyph positions "+tools[i]);
       if(tools[i]==AnnotationTool.Ink)Check(mark.points.Count>=3,"handwriting stores stroke points");

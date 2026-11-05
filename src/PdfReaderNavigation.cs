@@ -101,6 +101,7 @@ internal sealed partial class PdfReaderForm
     private void NavigateTarget(DocumentSession session, NavigationTarget target)
     {
         if(session==null || target==null || target.PageIndex<0 || target.PageIndex>=session.PageCount) return;
+        session.Viewer.FinishInlineEditing();
         session.Viewer.GoToPage(target.PageIndex,0);
         if(target.Zoom.HasValue) session.Viewer.SetZoom(target.Zoom.Value);
         else if(target.Fit!=null) session.Viewer.FitPage(target.Fit=="width");

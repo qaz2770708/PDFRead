@@ -21,6 +21,8 @@
     <Compile Include="src\AnnotationLayer.cs" />
     <Compile Include="src\AnnotationViewer.cs" />
     <Compile Include="src\AnnotationTools.cs" />
+    <Compile Include="src\AnnotationIcons.cs" />
+    <Compile Include="src\InlineTextEditor.cs" />
     <Compile Include="src\PdfTextRegions.cs" />
     <Compile Include="src\PdfNavigation.cs" />
     <Compile Include="src\PdfReaderNavigation.cs" />

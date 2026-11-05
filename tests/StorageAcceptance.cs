@@ -144,7 +144,7 @@ internal static class M2VerificationProbe
             "\",\"sourceName\":\"legacy-copy.pdf\",\"pageCount\":3,\"lastPage\":2,\"annotations\":[]}]}";
         File.WriteAllText(sidecar, legacy);
         SidecarLoadResult migrated = DocumentDataRepository.LoadForPdf(path, hash, 3, null);
-        Require(migrated.NeedsSave && migrated.Data.formatVersion == 4, "Version 1 data was not migrated to version 4.");
+        Require(migrated.NeedsSave && migrated.Data.formatVersion == 5, "Version 1 data was not migrated to version 5.");
         Require(Math.Abs(migrated.Record.zoom - 0.82f) < 0.001f && migrated.Record.lastPageOffset == 0,
             "Migration did not populate the new progress defaults.");
         DocumentDataRepository.Save(NewSession(path, hash, migrated));

@@ -74,6 +74,7 @@ internal sealed partial class PdfReaderForm
     internal bool TransferSessionTo(DocumentSession s, PdfReaderForm target)
     {
         if (s == null || target == null || target == this || !sessions.Contains(s) || target.HasDocument(s.PdfPath)) return false;
+        s.Viewer.FinishInlineEditing();
         int page; double offset;
         s.Viewer.CaptureReadingPosition(out page, out offset);
         double horizontal = s.Viewer.CaptureHorizontalPosition();

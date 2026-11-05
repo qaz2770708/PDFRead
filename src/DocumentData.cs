@@ -10,7 +10,7 @@ using System.Windows.Forms;
 [Serializable]
 internal sealed class SidecarFile
 {
-    public int formatVersion { get; set; } = 4;
+    public int formatVersion { get; set; } = 5;
     public int revision { get; set; }
     public List<VersionRecord> versions { get; set; } = new List<VersionRecord>();
     public string lastSavedUtc { get; set; }
@@ -62,6 +62,7 @@ internal sealed class AreaHighlight
     public double opacity { get; set; } = .45;
     public float strokeWidth { get; set; } = 2;
     public float fontSize { get; set; } = 12;
+    public string fontFamily { get; set; } = "Microsoft YaHei UI";
     public List<AnnotationPoint> points { get; set; } = new List<AnnotationPoint>();
     public List<AnnotationRegion> textRegions { get; set; } = new List<AnnotationRegion>();
 }
@@ -116,7 +117,7 @@ internal sealed class SidecarLoadResult
 
 internal static partial class DocumentDataRepository
 {
-    private const int CurrentFormatVersion = 4;
+    private const int CurrentFormatVersion = 5;
     private static readonly JavaScriptSerializer Serializer = new JavaScriptSerializer
     {
         MaxJsonLength = Int32.MaxValue,

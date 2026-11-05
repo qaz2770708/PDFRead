@@ -33,6 +33,10 @@ internal sealed class AnnotationLayer
     public event EventHandler Changed;
     public event EventHandler SelectionChanged;
     public event EventHandler<AnnotationEditEventArgs> EditRequested;
+    public event EventHandler<AreaHighlight> TextDraftCreated;
+    private AreaHighlight inlinePreview;
+    public AreaHighlight Find(string id){return marks.FirstOrDefault(m=>m.id==id);}
+    public void SetInlinePreview(AreaHighlight value){inlinePreview=value;}
     public void SetMarks(List<AreaHighlight> source) { Cancel(); marks=source;Selected=null;undo.Clear();redo.Clear();SelectionChanged?.Invoke(this,EventArgs.Empty); }
     public void SetTool(AnnotationTool tool) { Cancel();Tool=tool;if(tool!=AnnotationTool.Select)Selected=null;SelectionChanged?.Invoke(this,EventArgs.Empty); }
     private static T Copy<T>(T value) { return Json.Deserialize<T>(Json.Serialize(value)); }
@@ -88,6 +92,7 @@ internal sealed class AnnotationLayer
         if(!gesture)return;PointF p=Clamp(point);
         if(moving)
         {
+            if(Math.Abs(p.X-start.X)+Math.Abs(p.Y-start.Y)<.00001){preview=null;return;}
             RectangleF old=Bounds(original),next;
             if(corner<0)
             {
@@ -137,7 +142,8 @@ internal sealed class AnnotationLayer
         }
         if(item.type=="text_note")
         {
-            item.text="批注";var args=new AnnotationEditEventArgs{Annotation=item};EditRequested?.Invoke(this,args);if(args.Cancel){before=null;return;}
+            item.text=String.Empty;item.fontFamily="SimSun";before=null;Tool=AnnotationTool.Select;
+            SelectionChanged?.Invoke(this,EventArgs.Empty);TextDraftCreated?.Invoke(this,item);return;
         }
         marks.Add(item);Selected=item;Commit(before);before=null;
     }
@@ -158,8 +164,23 @@ internal sealed class AnnotationLayer
     }
     public void ApplyProperties(string text,string color,double opacity,float width,float font)
     {
-        if(Selected==null)return;var prior=Copy(marks);Selected.text=text;Selected.color=color;Selected.opacity=Math.Max(.1,Math.Min(1,opacity));Selected.strokeWidth=Math.Max(.5f,Math.Min(20,width));Selected.fontSize=Math.Max(6,Math.Min(72,font));Commit(prior);
+        if(Selected==null)return;var prior=Copy(marks);Selected.text=text;Selected.color=color;Selected.opacity=Math.Max(0,Math.Min(1,opacity));Selected.strokeWidth=Math.Max(.5f,Math.Min(20,width));Selected.fontSize=Math.Max(6,Math.Min(72,font));Commit(prior);
     }
+    public void ApplyInline(AreaHighlight value)
+    {
+        var existing=Find(value.id);
+        if(existing==null && value.type=="text_note" && String.IsNullOrWhiteSpace(value.text))return;
+        if(existing!=null && Json.Serialize(existing)==Json.Serialize(value))return;
+        var prior=Copy(marks);
+        if(value.type=="text_note" && String.IsNullOrWhiteSpace(value.text))
+        {if(existing!=null)marks.Remove(existing);Selected=null;}
+        else
+        {
+            var next=Copy(value);if(existing==null)marks.Add(next);else marks[marks.IndexOf(existing)]=next;Selected=next;
+        }
+        Commit(prior);
+    }
+    public void Delete(string id){var value=Find(id);if(value==null)return;Selected=value;DeleteSelected();}
     public void ResizeSelected(RectangleF bounds)
     {
         if(Selected==null)return;var prior=Copy(marks);Transform(Selected,bounds);Commit(prior);
@@ -191,8 +212,9 @@ internal sealed class AnnotationLayer
     public void Paint(Graphics graphics,Rectangle pageBounds,int index,float zoom)
     {
         GraphicsState state=graphics.Save();graphics.SetClip(pageBounds,CombineMode.Intersect);graphics.SmoothingMode=SmoothingMode.AntiAlias;
-        foreach(var m in marks)if(m.pageIndex==index && !(moving && preview!=null && m==Selected))DrawMark(graphics,pageBounds,m,zoom);
+        foreach(var m in marks)if(m.pageIndex==index && !(moving && preview!=null && m==Selected) && (inlinePreview==null || inlinePreview.id!=m.id))DrawMark(graphics,pageBounds,m,zoom);
         if(preview!=null && preview.pageIndex==index)DrawMark(graphics,pageBounds,preview,zoom);
+        if(inlinePreview!=null && inlinePreview.pageIndex==index)DrawMark(graphics,pageBounds,inlinePreview,zoom);
         if(Selected!=null && Selected.pageIndex==index)
         {
             RectangleF b=ScreenBounds(pageBounds,Bounds(moving && preview!=null?preview:Selected));using(var pen=new Pen(Color.RoyalBlue,1){DashStyle=DashStyle.Dash})graphics.DrawRectangle(pen,b.X,b.Y,b.Width,b.Height);
@@ -205,7 +227,7 @@ internal sealed class AnnotationLayer
     {
         if(Double.IsNaN(m.x) || Double.IsNaN(m.y) || Double.IsNaN(m.width) || Double.IsNaN(m.height))return;
         Color baseColor;try{baseColor=ColorTranslator.FromHtml(m.color??"#FFE45C");}catch{baseColor=Color.Gold;}
-        Color color=Color.FromArgb((int)(255*Math.Max(.1,Math.Min(1,m.opacity))),baseColor);
+        Color color=Color.FromArgb((int)(255*Math.Max(0,Math.Min(1,m.opacity))),baseColor);
         RectangleF b=ScreenBounds(page,Bounds(m));
         Func<AnnotationPoint,PointF> point=p=>new PointF(page.X+(float)p.x*page.Width,page.Y+(float)p.y*page.Height);
         using(var pen=new Pen(color,Math.Max(.5f,m.strokeWidth*zoom*4/3)){StartCap=LineCap.Round,EndCap=LineCap.Round,LineJoin=LineJoin.Round})
@@ -227,8 +249,8 @@ internal sealed class AnnotationLayer
             }
             else if(m.type=="text_note")
             {
-                using(var bg=new SolidBrush(Color.FromArgb(35,baseColor)))g.FillRectangle(bg,b);g.DrawRectangle(pen,b.X,b.Y,b.Width,b.Height);
-                using(var font=new Font("Microsoft YaHei UI",Math.Max(6,Math.Min(72,m.fontSize))*zoom))g.DrawString(m.text??"",font,fill,b);
+                using(var bg=new SolidBrush(Color.FromArgb((int)(35*Math.Max(0,Math.Min(1,m.opacity))),baseColor)))g.FillRectangle(bg,b);g.DrawRectangle(pen,b.X,b.Y,b.Width,b.Height);
+                using(var font=new Font(m.fontFamily??"SimSun",Math.Max(6,Math.Min(72,m.fontSize))*zoom))g.DrawString(m.text??"",font,fill,b);
             }
             else if(m.type=="ellipse")g.DrawEllipse(pen,b);
             else g.DrawRectangle(pen,b.X,b.Y,b.Width,b.Height);

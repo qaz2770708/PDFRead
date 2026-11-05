@@ -6,12 +6,12 @@ using System.Windows.Forms;
 internal sealed partial class PdfReaderForm
 {
     private bool syncingAnnotationTools;
-    private readonly ToolStripDropDownButton annotationMenu=new ToolStripDropDownButton("选择注释");
     private readonly ToolStripButton annotationProperties=new ToolStripButton("属性 F2");
     private readonly ToolStripButton annotationDelete=new ToolStripButton("删除 Del");
     private readonly ToolStripButton annotationUndo=new ToolStripButton("撤销");
     private readonly ToolStripButton annotationRedo=new ToolStripButton("重做");
-    private readonly Dictionary<AnnotationTool,ToolStripMenuItem> annotationItems=new Dictionary<AnnotationTool,ToolStripMenuItem>();
+    private readonly Dictionary<AnnotationTool,ToolStripButton> annotationItems=new Dictionary<AnnotationTool,ToolStripButton>();
+    private readonly List<Bitmap> annotationImages=new List<Bitmap>();
     internal Func<AreaHighlight,bool> AnnotationEditorOverride { get; set; }
     private static string ToolName(AnnotationTool tool)
     {
@@ -19,31 +19,35 @@ internal sealed partial class PdfReaderForm
     }
     private void InitializeAnnotationTools()
     {
-        annotationStrip.Items.Clear();annotationMenu.AutoSize=false;annotationMenu.Size=new Size(146,28);annotationStrip.Items.Add(annotationMenu);
+        annotationStrip.Items.Clear();annotationStrip.Tag="annotation-grid";annotationStrip.ImageScalingSize=new Size(24,24);
+        annotationStrip.LayoutStyle=ToolStripLayoutStyle.Flow;
+        ((FlowLayoutSettings)annotationStrip.LayoutSettings).WrapContents=true;
         var tools=new[]{AnnotationTool.Select,AnnotationTool.Highlight,AnnotationTool.Underline,AnnotationTool.Text,AnnotationTool.Ink,AnnotationTool.Rectangle,AnnotationTool.Ellipse,AnnotationTool.Line};
         var keys=new[]{"A","H","U","T","P","R","E","L"};
         for(int i=0;i<tools.Length;i++)
         {
-            AnnotationTool tool=tools[i];var item=new ToolStripMenuItem(ToolName(tool)){ShortcutKeyDisplayString="Ctrl+Shift+"+keys[i]};
-            item.Click+=delegate{SetActiveAnnotationTool(tool);};annotationMenu.DropDownItems.Add(item);annotationItems[tool]=item;
+            AnnotationTool tool=tools[i];var image=AnnotationIcons.Create(tool);annotationImages.Add(image);
+            var item=new ToolStripButton{Text=ToolName(tool),AccessibleName=ToolName(tool),ToolTipText=ToolName(tool)+" (Ctrl+Shift+"+keys[i]+")",Image=image,DisplayStyle=ToolStripItemDisplayStyle.Image,AutoSize=false,Size=new Size(34,26),Margin=new Padding(2,1,2,1)};
+            item.Click+=delegate{SetActiveAnnotationTool(tool);};annotationStrip.Items.Add(item);annotationItems[tool]=item;
         }
-        annotationMenu.ToolTipText="选择工具后在页面上拖拽；高亮/下划线优先贴合文本，没有文本时按区域标注";
         annotationEditStrip.Items.Clear();
         foreach(var button in new[]{annotationProperties,annotationDelete}){button.AutoSize=false;button.Size=new Size(73,28);annotationEditStrip.Items.Add(button);}
-        annotationProperties.Click+=delegate{EditActiveAnnotation();};annotationDelete.Click+=delegate{ActiveSession?.Viewer.AnnotationLayer.DeleteSelected();};
+        SetActionIcon(annotationProperties,"properties","快速样式；F2 打开专业属性");SetActionIcon(annotationDelete,"delete","删除所选注释 (Delete)");
+        annotationProperties.Click+=delegate{ActiveSession?.Viewer.ShowInlineSelection();};annotationDelete.Click+=delegate{var v=ActiveSession?.Viewer;if(v!=null){v.FinishInlineEditing();v.AnnotationLayer.DeleteSelected();}};
         foreach(var button in new[]{annotationUndo,annotationRedo}){button.AutoSize=false;button.Size=new Size(47,28);historyStrip.Items.Add(button);}
         annotationUndo.ToolTipText="撤销注释操作 Ctrl+Z";annotationRedo.ToolTipText="重做注释操作 Ctrl+Y";
-        annotationUndo.Click+=delegate{ActiveSession?.Viewer.AnnotationLayer.Undo();};annotationRedo.Click+=delegate{ActiveSession?.Viewer.AnnotationLayer.Redo();};
+        SetActionIcon(annotationUndo,"undo","撤销注释操作 (Ctrl+Z)");SetActionIcon(annotationRedo,"redo","重做注释操作 (Ctrl+Y)");
+        annotationUndo.Click+=delegate{var v=ActiveSession?.Viewer;if(v!=null){v.FinishInlineEditing();v.AnnotationLayer.Undo();}};annotationRedo.Click+=delegate{var v=ActiveSession?.Viewer;if(v!=null){v.FinishInlineEditing();v.AnnotationLayer.Redo();}};
     }
+    private void SetActionIcon(ToolStripButton button,string action,string tip){var image=AnnotationIcons.Action(action);annotationImages.Add(image);button.Image=image;button.DisplayStyle=ToolStripItemDisplayStyle.Image;button.AccessibleName=tip;button.ToolTipText=tip;}
+    private void DisposeAnnotationImages(){foreach(var image in annotationImages)image.Dispose();annotationImages.Clear();}
     private void SetActiveAnnotationTool(AnnotationTool tool){var s=ActiveSession;if(s==null)return;s.Viewer.SetAnnotationTool(tool);s.Viewer.Focus();SyncAnnotationControls();}
     private void SyncAnnotationControls()
     {
         var layer=ActiveSession?.Viewer.AnnotationLayer;syncingAnnotationTools=true;
         try
         {
-            annotationMenu.Enabled=layer!=null;
-            annotationMenu.Text=layer==null?"注释工具":ToolName(layer.Tool);
-            foreach(var pair in annotationItems)pair.Value.Checked=layer!=null && pair.Key==layer.Tool;
+            foreach(var pair in annotationItems){pair.Value.Enabled=layer!=null;pair.Value.Checked=layer!=null && pair.Key==layer.Tool;}
             highlightButton.Checked=layer!=null && layer.Tool==AnnotationTool.Highlight;
             annotationProperties.Enabled=annotationDelete.Enabled=layer?.Selected!=null;
             annotationUndo.Enabled=layer!=null && layer.CanUndo;annotationRedo.Enabled=layer!=null && layer.CanRedo;
@@ -52,7 +56,7 @@ internal sealed partial class PdfReaderForm
     }
     private void EditActiveAnnotation()
     {
-        var s=ActiveSession;if(s==null)return;s.Viewer.AnnotationLayer.EditSelected();
+        var s=ActiveSession;if(s==null)return;s.Viewer.FinishInlineEditing();s.Viewer.AnnotationLayer.EditSelected();
         var selected=s.Viewer.AnnotationLayer.Selected;if(selected!=null && selected.pageIndex!=s.Viewer.CurrentPage)s.Viewer.GoToLocation(selected.pageIndex,selected.y,selected.x);
     }
     private bool HandleAnnotationShortcut(DocumentSession s,Keys key)
@@ -70,10 +74,10 @@ internal sealed partial class PdfReaderForm
             case Keys.Control|Keys.Shift|Keys.L:tool=AnnotationTool.Line;break;
         }
         if(tool.HasValue){SetActiveAnnotationTool(tool.Value);return true;}
-        if(key==Keys.Delete && s.Viewer.ContainsFocus && s.Viewer.AnnotationLayer.Selected!=null){s.Viewer.AnnotationLayer.DeleteSelected();return true;}
+        if(key==Keys.Delete && s.Viewer.ContainsFocus && !s.Viewer.InlineTextInputFocused && s.Viewer.AnnotationLayer.Selected!=null){s.Viewer.FinishInlineEditing();s.Viewer.AnnotationLayer.DeleteSelected();return true;}
         if(key==Keys.F2 && s.Viewer.ContainsFocus && s.Viewer.AnnotationLayer.Selected!=null){EditActiveAnnotation();return true;}
-        if(!PageInputFocused && !bookmarkTree.ContainsFocus && (key==(Keys.Control|Keys.Z) || key==(Keys.Control|Keys.Y)))
-        {if(key==(Keys.Control|Keys.Z))s.Viewer.AnnotationLayer.Undo();else s.Viewer.AnnotationLayer.Redo();return true;}
+        if(!PageInputFocused && !s.Viewer.InlineTextInputFocused && !bookmarkTree.ContainsFocus && (key==(Keys.Control|Keys.Z) || key==(Keys.Control|Keys.Y)))
+        {s.Viewer.FinishInlineEditing();if(key==(Keys.Control|Keys.Z))s.Viewer.AnnotationLayer.Undo();else s.Viewer.AnnotationLayer.Redo();return true;}
         return false;
     }
     private bool EditAnnotationProperties(DocumentSession session,AreaHighlight annotation)
@@ -90,7 +94,7 @@ internal sealed partial class PdfReaderForm
             var text=new TextBox{Multiline=true,ScrollBars=ScrollBars.Vertical,MaxLength=10000,Text=annotation.text??"",Height=115};row("批注文本",text);table.RowStyles.Add(new RowStyle(SizeType.Absolute,28));table.RowStyles.Add(new RowStyle(SizeType.Absolute,30));table.RowStyles.Add(new RowStyle(SizeType.Absolute,120));
             Color color;try{color=ColorTranslator.FromHtml(annotation.color??"#2878D7");}catch{color=Color.RoyalBlue;}
             var colorButton=new Button{Text="选择颜色",BackColor=color};colorButton.Click+=delegate{using(var picker=new ColorDialog{Color=color})if(picker.ShowDialog(dialog)==DialogResult.OK){color=picker.Color;colorButton.BackColor=color;}};row("颜色",colorButton);
-            var opacity=new NumericUpDown{Minimum=10,Maximum=100,Value=(decimal)Math.Max(10,Math.Min(100,annotation.opacity*100))};row("不透明度 %",opacity);
+            var opacity=new NumericUpDown{Minimum=0,Maximum=100,Value=(decimal)Math.Max(0,Math.Min(100,annotation.opacity*100))};row("不透明度 %",opacity);
             var width=new NumericUpDown{Minimum=.5m,Maximum=20,DecimalPlaces=1,Increment=.5m,Value=(decimal)Math.Max(.5,Math.Min(20,annotation.strokeWidth))};row("线宽 pt",width);
             var font=new NumericUpDown{Minimum=6,Maximum=72,Value=(decimal)Math.Max(6,Math.Min(72,annotation.fontSize))};row("字号 pt",font);
             var buttons=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft,AutoSize=true};

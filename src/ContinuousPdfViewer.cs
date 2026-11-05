@@ -119,6 +119,7 @@ internal sealed partial class ContinuousPdfViewer : ScrollableControl
             Math.Max(0, after.Top + (int)Math.Round(y * after.Height) - anchor.Y));
         NotifyReadingPosition();
         QueueVisibleRender();
+        InlineEditor.Reposition();
     }
 
     public void FitPage(bool widthOnly)
@@ -152,6 +153,7 @@ internal sealed partial class ContinuousPdfViewer : ScrollableControl
         AutoScrollPosition = new Point(x, Math.Max(0, y));
         NotifyReadingPosition();
         QueueVisibleRender();
+        InlineEditor.Reposition();
     }
 
     public double CaptureHorizontalPosition()
@@ -170,6 +172,7 @@ internal sealed partial class ContinuousPdfViewer : ScrollableControl
         AutoScrollPosition = new Point(x,-AutoScrollPosition.Y);
         NotifyReadingPosition();
         QueueVisibleRender();
+        InlineEditor.Reposition();
     }
 
     private PageLink LinkAt(Point client)
@@ -228,6 +231,7 @@ internal sealed partial class ContinuousPdfViewer : ScrollableControl
         base.OnScroll(se);
         QueueVisibleRender();
         NotifyReadingPosition();
+        InlineEditor.Reposition();
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
@@ -236,6 +240,7 @@ internal sealed partial class ContinuousPdfViewer : ScrollableControl
         base.OnMouseWheel(e);
         QueueVisibleRender();
         NotifyReadingPosition();
+        InlineEditor.Reposition();
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -288,6 +293,8 @@ internal sealed partial class ContinuousPdfViewer : ScrollableControl
     {
         if (disposing)
         {
+            InlineEditor.Dispose();
+            ContextMenuStrip?.Dispose();
             renderTimer.Stop();
             renderTimer.Dispose();
             DisposeRenderedPages();
@@ -333,6 +340,7 @@ internal sealed partial class ContinuousPdfViewer : ScrollableControl
         }
         Invalidate();
         NotifyReadingPosition();
+        InlineEditor.Reposition();
     }
 
     private void QueueVisibleRender()
