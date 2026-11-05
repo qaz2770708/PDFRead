@@ -44,6 +44,7 @@ internal sealed partial class PdfReaderForm
     {
         if (disposing)
         {
+            DisposeModernShell();
             thumbnailTimer.Dispose();
             bookmarkMenu.Dispose();
             rightTools?.Dispose();

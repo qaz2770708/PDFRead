@@ -160,7 +160,7 @@ internal sealed partial class PdfReaderForm
     }
     private void ShowReadingTools()
     {
-        if (rightTools == null || rightTools.IsDisposed || !Visible || WindowState == FormWindowState.Minimized) return;
+        if (UsesModernUi || rightTools == null || rightTools.IsDisposed || !Visible || WindowState == FormWindowState.Minimized) return;
         PositionReadingTools();
         if (!rightTools.Visible) rightTools.Show(this);
     }

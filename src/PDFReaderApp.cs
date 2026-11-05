@@ -12,6 +12,7 @@ internal static class Program
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        ModernUi.Enabled=true;
         Application.Run(new ReaderApplicationContext(args));
     }
 }
@@ -86,6 +87,7 @@ internal sealed partial class PdfReaderForm : Form
             foreach (string path in initialPaths)
                 if (!String.IsNullOrWhiteSpace(path) && File.Exists(path)) OpenPdf(path);
         };
+        Shown+=async delegate{await InitializeModernShell();};
         UpdateToolbar(null);
     }
 
@@ -96,6 +98,7 @@ internal sealed partial class PdfReaderForm : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        if(UsesModernUi && modernView.ContainsFocus)return base.ProcessCmdKey(ref msg,keyData);
         DocumentSession s = ActiveSession;
         if(s!=null && s.Viewer.HandleInlineKey(keyData))return true;
         switch (keyData)
@@ -221,6 +224,7 @@ internal sealed partial class PdfReaderForm : Form
             };
             session.KnownPaths.Add(fullPath);
             session.Viewer = new ContinuousPdfViewer { Dock = DockStyle.Fill };
+            session.Viewer.SetModernPresentation(UsesModernUi);
             session.Viewer.Configure(session.PdfDocument, count, session.Record.zoom, session.Annotations);
             session.Navigation = PdfNavigationReader.Read(fullPath);
             session.Thumbnails = new DocumentThumbnails(session.PdfDocument, count);
@@ -258,7 +262,7 @@ internal sealed partial class PdfReaderForm : Form
 
     private void ReadingPositionChanged(DocumentSession session, ReadingPositionEventArgs e)
     {
-        if (movingSession || documentTabs.Reordering || session.Restoring || ActiveSession != session) return;
+        if (movingSession || documentTabs.Reordering || session.Restoring || UsesModernUi || ActiveSession != session) return;
         if (ActiveSession == session) zoomLabel.Text = Math.Round(session.Viewer.Zoom * 100) + "%";
         bool changed = e.PageIndex != session.Record.lastPage ||
             Math.Abs(e.PageOffset - session.Record.lastPageOffset) > 0.001 ||

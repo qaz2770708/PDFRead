@@ -70,6 +70,7 @@ internal static partial class DocumentDataRepository
         }
         return paired;
     }
+    internal static string[] RecentPaths(){return ReadIndex().locations.AsEnumerable().Reverse().Select(l=>l.path).Where(p=>!String.IsNullOrEmpty(p)&&File.Exists(p)).Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToArray();}
     internal static void RegisterLocation(string pdfPath,string hash,string dataPath=null)
     {
         string full=Path.GetFullPath(pdfPath);LibraryIndex index=ReadIndex();

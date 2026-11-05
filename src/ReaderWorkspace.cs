@@ -79,9 +79,9 @@ internal sealed partial class PdfReaderForm
         if (s == null || target == null || target == this || !sessions.Contains(s) || target.HasDocument(s.PdfPath)) return false;
         s.Viewer.FinishInlineEditing();
         int page; double offset;
-        s.Viewer.CaptureReadingPosition(out page, out offset);
-        double horizontal = s.Viewer.CaptureHorizontalPosition();
-        float zoom = s.Viewer.Zoom;
+        if(UsesModernUi){page=s.Record.lastPage;offset=s.Record.lastPageOffset;}else s.Viewer.CaptureReadingPosition(out page, out offset);
+        double horizontal = UsesModernUi?s.Record.lastPageHorizontal:s.Viewer.CaptureHorizontalPosition();
+        float zoom = UsesModernUi?s.Record.zoom:s.Viewer.Zoom;
         int originalIndex = documentTabs.TabPages.IndexOf(s.Tab);
         movingSession = target.movingSession = true;
         bool transferred = false;
@@ -112,8 +112,7 @@ internal sealed partial class PdfReaderForm
         foreach (var item in sessions) item.Viewer.SetActive(item == ActiveSession);
         foreach (var item in target.sessions) item.Viewer.SetActive(item == target.ActiveSession);
         UpdateToolbar(ActiveSession); target.UpdateToolbar(target.ActiveSession);
-        s.Viewer.SetZoom(zoom);
-        s.Viewer.GoToLocation(page, offset, horizontal);
+        s.Restoring=true;try{s.Viewer.SetZoom(zoom);s.Viewer.GoToLocation(page, offset, horizontal);}finally{s.Restoring=false;}
         PdfReaderForm owner = transferred ? target : this;
         if (s.Dirty) { owner.pendingProgressSaves.Add(s); owner.progressSaveTimer.Start(); }
         s.Viewer.Focus();

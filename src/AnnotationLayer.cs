@@ -35,6 +35,7 @@ internal sealed class AnnotationLayer
     public event EventHandler<AnnotationEditEventArgs> EditRequested;
     public event EventHandler<AreaHighlight> TextDraftCreated;
     private AreaHighlight inlinePreview;
+    internal AreaHighlight PresentationPreview {get{return preview;}}
     public AreaHighlight Find(string id){return marks.FirstOrDefault(m=>m.id==id);}
     public void SetInlinePreview(AreaHighlight value){inlinePreview=value;}
     public void SetMarks(List<AreaHighlight> source) { Cancel(); marks=source;Selected=null;undo.Clear();redo.Clear();SelectionChanged?.Invoke(this,EventArgs.Empty); }

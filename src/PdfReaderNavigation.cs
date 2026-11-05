@@ -129,6 +129,7 @@ internal sealed partial class PdfReaderForm
     }
     private void CaptureBookmark(DocumentSession s,UserBookmark b)
     {
+        if(UsesModernUi){b.pageIndex=s.Record.lastPage;b.pageOffset=s.Record.lastPageOffset;b.horizontalOffset=s.Record.lastPageHorizontal;b.zoom=s.Record.zoom;return;}
         int page;double offset;s.Viewer.CaptureReadingPosition(out page,out offset);
         b.pageIndex=page;b.pageOffset=offset;b.horizontalOffset=s.Viewer.CaptureHorizontalPosition();b.zoom=s.Viewer.Zoom;
     }

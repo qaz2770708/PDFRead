@@ -80,8 +80,12 @@ internal sealed partial class ContinuousPdfViewer : ScrollableControl
 
     public void SetHighlightMode(bool enabled) { SetAnnotationTool(enabled?AnnotationTool.Highlight:AnnotationTool.Select); }
 
+    internal IList<SizeF> DocumentPageSizes {get{return pageSizes.AsReadOnly();}}
+    private bool modernPresentation;
+    internal void SetModernPresentation(bool value){modernPresentation=value;if(value)SetActive(false);}
     public void SetActive(bool value)
     {
+        if(modernPresentation)value=false;
         if (active == value) return;
         active = value;
         if (active) QueueVisibleRender();

@@ -6,7 +6,7 @@
     <RootNamespace>PDFReader</RootNamespace>
     <LangVersion>latest</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <DefaultItemExcludes>$(DefaultItemExcludes);work/**;outputs/**;tests/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);work/**;outputs/**;tests/**;ui/node_modules/**;ui/dist/**</DefaultItemExcludes>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <Compile Include="src\PDFReaderApp.cs" />
+    <Compile Include="src\ModernShell.cs" />
     <Compile Include="src\ContinuousPdfViewer.cs" />
     <Compile Include="src\DocumentData.cs" />
     <Compile Include="src\CentralDataStore.cs" />
@@ -37,6 +38,8 @@
     <Compile Include="src\ReaderWorkspace.cs" />
     <Compile Include="src\NavigationPresentation.cs" />
     <Compile Include="src\WindowsPdfRenderer.cs" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <Content Include="ui\dist\**\*"><Link>web\%(RecursiveDir)%(Filename)%(Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <PackageReference Include="PDFsharp-GDI" Version="6.2.4" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
     <Reference Include="System.Web.Extensions" />

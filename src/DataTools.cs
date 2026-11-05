@@ -88,7 +88,7 @@ internal sealed partial class PdfReaderForm
     }
     private void CaptureSessionData(DocumentSession s)
     {
-        if(s==ActiveSession && !s.Restoring){int page;double offset;s.Viewer.CaptureReadingPosition(out page,out offset);s.Record.lastPage=page;s.Record.lastPageOffset=offset;s.Record.lastPageHorizontal=s.Viewer.CaptureHorizontalPosition();s.Record.zoom=s.Viewer.Zoom;}
+        if(s==ActiveSession && !s.Restoring && !UsesModernUi){int page;double offset;s.Viewer.CaptureReadingPosition(out page,out offset);s.Record.lastPage=page;s.Record.lastPageOffset=offset;s.Record.lastPageHorizontal=s.Viewer.CaptureHorizontalPosition();s.Record.zoom=s.Viewer.Zoom;}
         s.Record.annotations=s.Annotations;
         if(!s.Data.versions.Contains(s.Record))s.Data.versions.Add(s.Record);
     }

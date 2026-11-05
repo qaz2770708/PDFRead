@@ -231,6 +231,8 @@ internal sealed class InlineTextEditor : IDisposable
     {
         if(!IsText)return;draft.x=rect.X;draft.y=rect.Y;draft.width=rect.Width;draft.height=rect.Height;Changed();Reposition();
     }
+    internal void BeginExternalDrag(){if(!IsOpen)return;dragging=true;saveTimer.Stop();}
+    internal void EndExternalDrag(){if(IsOpen)EndDrag();}
     private void EndDrag(){dragging=false;caption.Capture=grip.Capture=false;Flush();}
     public void Dispose(){if(disposed)return;disposed=true;saveTimer.Dispose();tips.Dispose();frame.Dispose();caption.Dispose();StylePanel.Dispose();inputFont?.Dispose();}
 }

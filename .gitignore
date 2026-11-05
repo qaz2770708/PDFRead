@@ -12,3 +12,7 @@ PDFReader-error.log
 PDFReader-debug.log
 
 *.pdfdata.*
+
+ui/node_modules/
+ui/dist/
+*.WebView2/
