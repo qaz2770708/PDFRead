@@ -1,7 +1,15 @@
-param([switch]$NoRestore, [switch]$ModernUI)
+param([switch]$NoRestore, [switch]$ModernUI, [switch]$OCR)
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
+    if ($OCR) {
+        $ocrArguments=@('build','tests/TextSelectionAcceptance.csproj','-c','Release')
+        if($NoRestore){$ocrArguments+='--no-restore'}
+        dotnet @ocrArguments
+        if($LASTEXITCODE -ne 0){throw 'OCR test build failed'}
+        & ./tests/bin/Release/net48/TextSelectionAcceptance.exe
+        if($LASTEXITCODE -ne 0){throw 'OCR acceptance failed (requires Windows OCR language component)'}
+    }
     if ($ModernUI) {
         $uiArguments = @('build', 'tests/ModernUiAcceptance.csproj', '-c', 'Release')
         if ($NoRestore) { $uiArguments += '--no-restore' }

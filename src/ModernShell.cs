@@ -151,7 +151,7 @@ internal sealed partial class PdfReaderForm
         if(op=="textPage")
         {
             var source=ModernSession(Arg(c,"session"));int page=(int)Number(c,"page");
-            if(source!=null&&page>=0&&page<source.PageCount)PostModern(new{type="textPage",session=source.PdfHash,page,content=source.TextSource.GetSelectableText(page)});
+            if(source!=null&&page>=0&&page<source.PageCount)LoadModernText(source,page,Flag(c,"retry"));
             return;
         }
         if(op=="open"){CancelModernGesture();ShowOpenDialog();SendModernState(true);return;}
@@ -256,6 +256,14 @@ internal sealed partial class PdfReaderForm
             var link=s.Navigation?.Links.FirstOrDefault(l=>l.PageIndex==(int)Number(c,"page")&&l.Bounds.Contains((float)Number(c,"x"),(float)Number(c,"y")));if(link!=null)ModernGo(s,link.Target.PageIndex,link.Target.PageOffset,link.Target.HorizontalOffset,link.Target.Zoom);
         }
         SendModernState(true);
+    }
+    private readonly HashSet<string> modernTextRequests=new HashSet<string>();
+    private async void LoadModernText(DocumentSession session,int page,bool retry)
+    {
+        string key=session.PdfHash+":"+page;if(!modernTextRequests.Add(key))return;
+        try{var source=session.TextSource;var content=await Task.Run(()=>source.GetSelectableText(page,retry));if(!IsDisposed&&UsesModernUi&&sessions.Contains(session))PostModern(new{type="textPage",session=session.PdfHash,page,content});}
+        catch(Exception){if(!IsDisposed&&UsesModernUi)PostModern(new{type="textPage",session=session.PdfHash,page,content=new SelectableText{error="文字加载未完成，请重试。"}});}
+        finally{modernTextRequests.Remove(key);}
     }
     private void DisposeModernShell(){modernTimer?.Dispose();modernView?.Dispose();}
 }

@@ -12,24 +12,33 @@ internal sealed class PdfTextRegions : IDisposable
     private readonly Dictionary<int,object> selectablePages=new Dictionary<int,object>();
     private readonly Dictionary<int,List<AnnotationRegion>> pages=new Dictionary<int,List<AnnotationRegion>>();
     public PdfTextRegions(string pdfPath){path=pdfPath;}
-    internal object GetSelectableText(int pageIndex)
+    private readonly object textGate=new object();
+    private volatile bool disposed;
+    internal object GetSelectableText(int pageIndex,bool retry=false)
     {
-        object cached;if(selectablePages.TryGetValue(pageIndex,out cached))return cached;
-        try
+        lock(textGate)
         {
-            if(document==null)document=PdfDocument.Open(path);
-            var page=document.GetPage(pageIndex+1);
-            var words=page.GetWords().Where(w=>!String.IsNullOrWhiteSpace(w.Text)).Select(w=>
+            object cached;if(!retry&&selectablePages.TryGetValue(pageIndex,out cached))return cached;
+            SelectableText result=null;
+            try
             {
-                var r=w.BoundingBox;double dx=r.TopRight.X-r.TopLeft.X,dy=r.TopRight.Y-r.TopLeft.Y;
-                return new {text=w.Text,x=r.TopLeft.X/page.Width,y=1-r.TopLeft.Y/page.Height,
-                    width=Math.Sqrt(dx*dx+dy*dy)/page.Width,height=Math.Sqrt(Math.Pow(r.BottomLeft.X-r.TopLeft.X,2)+Math.Pow(r.BottomLeft.Y-r.TopLeft.Y,2))/page.Height,
-                    angle=Math.Atan2(-dy,dx)*180/Math.PI};
-            }).Where(w=>w.width>0&&w.height>0).ToArray();
-            var result=new {words,error=words.Length==0?"此页没有可选择的文字，扫描页需要 OCR。":null};
-            if(selectablePages.Count>=16)selectablePages.Remove(selectablePages.Keys.First());selectablePages[pageIndex]=result;return result;
+                // Separate parser lifetime from annotation extraction to permit background text loading.
+                using(var pdf=PdfDocument.Open(path))
+                {
+                    var page=pdf.GetPage(pageIndex+1);
+                    var words=page.GetWords().Where(w=>!String.IsNullOrWhiteSpace(w.Text)).Select(w=>
+                    {
+                        var r=w.BoundingBox;double dx=r.TopRight.X-r.TopLeft.X,dy=r.TopRight.Y-r.TopLeft.Y;
+                        return new SelectableWord{text=w.Text,x=r.TopLeft.X/page.Width,y=1-r.TopLeft.Y/page.Height,
+                            width=Math.Sqrt(dx*dx+dy*dy)/page.Width,height=Math.Sqrt(Math.Pow(r.BottomLeft.X-r.TopLeft.X,2)+Math.Pow(r.BottomLeft.Y-r.TopLeft.Y,2))/page.Height,angle=Math.Atan2(-dy,dx)*180/Math.PI};
+                    }).Where(w=>w.width>0&&w.height>0&&!w.text.Contains("\ufffd")).ToArray();
+                    if(words.Length>0)result=new SelectableText{words=words};
+                }
+            }
+            catch(Exception ex){System.Diagnostics.Debug.WriteLine(ex.Message);}
+            if(result==null)result=WindowsTextRecognition.Read(path,pageIndex);
+            if(!disposed){if(selectablePages.Count>=16)selectablePages.Remove(selectablePages.Keys.First());selectablePages[pageIndex]=result;}return result;
         }
-        catch(Exception ex){System.Diagnostics.Debug.WriteLine(ex.Message);return new {words=new object[0],error="此页文字无法解析，仍可阅读和批注。"};}
     }
     public List<AnnotationRegion> GetRegions(int pageIndex,RectangleF selection)
     {
@@ -58,7 +67,7 @@ internal sealed class PdfTextRegions : IDisposable
         }
         catch(Exception ex){failed=true;System.Diagnostics.Debug.WriteLine("Text regions: "+ex.Message);return new List<AnnotationRegion>();}
     }
-    public void Dispose(){document?.Dispose();document=null;pages.Clear();selectablePages.Clear();}
+    public void Dispose(){disposed=true;document?.Dispose();document=null;pages.Clear();}
     private static List<AnnotationRegion> MergeLines(List<AnnotationRegion> selected)
     {
         var result=new List<AnnotationRegion>();
