@@ -9,8 +9,28 @@ internal sealed class PdfTextRegions : IDisposable
     private readonly string path;
     private PdfDocument document;
     private bool failed;
+    private readonly Dictionary<int,object> selectablePages=new Dictionary<int,object>();
     private readonly Dictionary<int,List<AnnotationRegion>> pages=new Dictionary<int,List<AnnotationRegion>>();
     public PdfTextRegions(string pdfPath){path=pdfPath;}
+    internal object GetSelectableText(int pageIndex)
+    {
+        object cached;if(selectablePages.TryGetValue(pageIndex,out cached))return cached;
+        try
+        {
+            if(document==null)document=PdfDocument.Open(path);
+            var page=document.GetPage(pageIndex+1);
+            var words=page.GetWords().Where(w=>!String.IsNullOrWhiteSpace(w.Text)).Select(w=>
+            {
+                var r=w.BoundingBox;double dx=r.TopRight.X-r.TopLeft.X,dy=r.TopRight.Y-r.TopLeft.Y;
+                return new {text=w.Text,x=r.TopLeft.X/page.Width,y=1-r.TopLeft.Y/page.Height,
+                    width=Math.Sqrt(dx*dx+dy*dy)/page.Width,height=Math.Sqrt(Math.Pow(r.BottomLeft.X-r.TopLeft.X,2)+Math.Pow(r.BottomLeft.Y-r.TopLeft.Y,2))/page.Height,
+                    angle=Math.Atan2(-dy,dx)*180/Math.PI};
+            }).Where(w=>w.width>0&&w.height>0).ToArray();
+            var result=new {words,error=words.Length==0?"此页没有可选择的文字，扫描页需要 OCR。":null};
+            if(selectablePages.Count>=16)selectablePages.Remove(selectablePages.Keys.First());selectablePages[pageIndex]=result;return result;
+        }
+        catch(Exception ex){System.Diagnostics.Debug.WriteLine(ex.Message);return new {words=new object[0],error="此页文字无法解析，仍可阅读和批注。"};}
+    }
     public List<AnnotationRegion> GetRegions(int pageIndex,RectangleF selection)
     {
         try
@@ -38,7 +58,7 @@ internal sealed class PdfTextRegions : IDisposable
         }
         catch(Exception ex){failed=true;System.Diagnostics.Debug.WriteLine("Text regions: "+ex.Message);return new List<AnnotationRegion>();}
     }
-    public void Dispose(){document?.Dispose();document=null;pages.Clear();}
+    public void Dispose(){document?.Dispose();document=null;pages.Clear();selectablePages.Clear();}
     private static List<AnnotationRegion> MergeLines(List<AnnotationRegion> selected)
     {
         var result=new List<AnnotationRegion>();

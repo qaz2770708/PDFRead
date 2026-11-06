@@ -148,6 +148,12 @@ internal sealed partial class PdfReaderForm
             ReleaseCapture();PostMessage(Handle,0x00A1,new IntPtr(edge),IntPtr.Zero);return;
         }
         if(op=="ready"){SendModernState(true);return;}
+        if(op=="textPage")
+        {
+            var source=ModernSession(Arg(c,"session"));int page=(int)Number(c,"page");
+            if(source!=null&&page>=0&&page<source.PageCount)PostModern(new{type="textPage",session=source.PdfHash,page,content=source.TextSource.GetSelectableText(page)});
+            return;
+        }
         if(op=="open"){CancelModernGesture();ShowOpenDialog();SendModernState(true);return;}
         if(op=="recent"){string path=Arg(c,"path");if(DocumentDataRepository.RecentPaths().Contains(path,StringComparer.OrdinalIgnoreCase))OpenPdf(path);SendModernState(true);return;}
         if(op=="render")
@@ -167,6 +173,7 @@ internal sealed partial class PdfReaderForm
         if(c.ContainsKey("session") && Arg(c,"session")!=s?.PdfHash)return;
         if(op=="panel"){modernPanel=Arg(c,"panel")==modernPanel?"":Arg(c,"panel");SendModernState(true);return;}
         if(s==null)return;
+        if(op=="copyText"){string text=Arg(c,"text");if(text.Length>2000000)throw new InvalidOperationException("选择的文字过多，请分段复制。");if(text.Length>0)Clipboard.SetText(text,TextDataFormat.UnicodeText);return;}
         if(op=="reading"){ModernReading(s,c);return;}
         if(op=="goto"){ModernGo(s,(int)Number(c,"page"),Number(c,"offset"),Number(c,"horizontal"));}
         else if(op=="zoom"){ModernGo(s,s.Record.lastPage,s.Record.lastPageOffset,s.Record.lastPageHorizontal,(float)(c.ContainsKey("delta")?s.Record.zoom+Number(c,"delta"):Number(c,"zoom",s.Record.zoom)),false);}
