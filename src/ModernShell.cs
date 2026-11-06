@@ -23,10 +23,11 @@ internal sealed partial class PdfReaderForm
     [DllImport("user32.dll")]private static extern bool PostMessage(IntPtr window,int message,IntPtr wParam,IntPtr lParam);
     private WebView2 modernView;
     private Timer modernTimer;
-    private bool modernReady,modernGesture,modernFaulted;
+    private bool modernReady,modernGesture,modernFaulted,modernDraftDragging;
     private DocumentSession modernGestureSession;
 
     private int modernNavigation;
+    private string modernGestureDone="";
     private string modernPanel="",modernLastState="";
     private static readonly JavaScriptSerializer ModernJson=new JavaScriptSerializer{MaxJsonLength=Int32.MaxValue,RecursionLimit=128};
     internal string ModernStartupError {get;private set;}
@@ -102,19 +103,19 @@ internal sealed partial class PdfReaderForm
         var s=ActiveSession;var layer=s?.Viewer.AnnotationLayer;var draft=s?.Viewer.InlineEditor.Draft;
         IEnumerable<AreaHighlight> marks=s?.Annotations??new List<AreaHighlight>();
         var preview=layer?.PresentationPreview;
-        if(preview!=null)marks=marks.Where(m=>m.id!=preview.id).Concat(new[]{preview});
+        if(preview!=null&&!modernGesture)marks=marks.Where(m=>m.id!=preview.id).Concat(new[]{preview});
         if(draft!=null)marks=marks.Where(m=>m.id!=draft.id).Concat(new[]{draft});
         return new{type="state",heroui="3.2.7",maximized=WindowState==FormWindowState.Maximized,navigation=modernNavigation,panel=modernPanel,
             tabs=documentTabs.TabPages.Cast<TabPage>().Select(t=>{var d=(DocumentSession)t.Tag;return new{id=d.PdfHash,name=Path.GetFileName(d.PdfPath),path=d.PdfPath,dirty=d.Dirty||d.Viewer.InlineEditor.HasPendingChanges};}).ToArray(),
             active=s==null?null:(object)new{id=s.PdfHash,name=Path.GetFileName(s.PdfPath),path=s.PdfPath,pages=s.Viewer.DocumentPageSizes.Select(p=>new{width=p.Width,height=p.Height}).ToArray(),zoom=s.Record.zoom,page=s.Record.lastPage,offset=s.Record.lastPageOffset,horizontal=s.Record.lastPageHorizontal,
-                tool=layer.Tool.ToString(),selected=layer.Selected?.id,marks=marks.ToArray(),draft=draft,gesture=modernGesture,undo=layer.CanUndo,redo=layer.CanRedo,status=statusLabel.Text,failed=s.SaveFailed,temporary=s.DataReadOnly,bookmarks=s.Record.bookmarks,outline=ModernOutline(s.Navigation?.Outline??new List<NavigationTarget>())},
+                gestureDone=modernGestureDone,tool=layer.Tool.ToString(),selected=layer.Selected?.id,marks=marks.ToArray(),draft=draft,gesture=modernGesture,undo=layer.CanUndo,redo=layer.CanRedo,status=statusLabel.Text,failed=s.SaveFailed,temporary=s.DataReadOnly,bookmarks=s.Record.bookmarks,outline=ModernOutline(s.Navigation?.Outline??new List<NavigationTarget>())},
             recent=DocumentDataRepository.RecentPaths().Select(p=>new{path=p,name=Path.GetFileName(p)}).ToArray()};
     }
     private void SendModernState(bool force)
     {
-        if(!UsesModernUi)return;string json=ModernJson.Serialize(ModernSnapshot());if(!force&&json==modernLastState)return;modernLastState=json;modernView.CoreWebView2.PostWebMessageAsJson(json);
+        if(!UsesModernUi||(!force&&(modernGesture||modernDraftDragging)))return;string json=ModernJson.Serialize(ModernSnapshot());if(!force&&json==modernLastState)return;modernLastState=json;modernView.CoreWebView2.PostWebMessageAsJson(json);
     }
-    private void CancelModernGesture(){if(modernGestureSession!=null)modernGestureSession.Viewer.AnnotationLayer.Cancel();modernGesture=false;modernGestureSession=null;}
+    private void CancelModernGesture(){modernDraftDragging=false;if(modernGestureSession!=null)modernGestureSession.Viewer.AnnotationLayer.Cancel();modernGesture=false;modernGestureSession=null;}
     private void ModernGo(DocumentSession s,int page,double offset=0,double horizontal=0,float? zoom=null,bool finishEditor=true)
     {
         if(s==null)return;CancelModernGesture();if(finishEditor)s.Viewer.FinishInlineEditing();s.Record.lastPage=Math.Max(0,Math.Min(s.PageCount-1,page));s.Record.lastPageOffset=Math.Max(0,Math.Min(1,offset));s.Record.lastPageHorizontal=Math.Max(0,Math.Min(1,horizontal));
@@ -185,14 +186,17 @@ internal sealed partial class PdfReaderForm
             s.Viewer.FinishInlineEditing();int page=(int)Number(c,"page");if(page<0||page>=s.PageCount)return;var size=s.Viewer.DocumentPageSizes[page];
             modernGesture=s.Viewer.AnnotationLayer.Begin(page,new PointF((float)Number(c,"x"),(float)Number(c,"y")),8/(size.Width*s.Record.zoom),8/(size.Height*s.Record.zoom));modernGestureSession=s;
         }
-        else if(op=="move"){if(modernGesture&&modernGestureSession==s)s.Viewer.AnnotationLayer.Move(new PointF((float)Number(c,"x"),(float)Number(c,"y")));return;}
+        else if(op=="move")
+        {
+            if(modernGesture&&modernGestureSession==s){object samples;if(c.TryGetValue("points",out samples)&&samples is System.Collections.IEnumerable)foreach(var value in (System.Collections.IEnumerable)samples){var sample=value as Dictionary<string,object>;if(sample!=null)s.Viewer.AnnotationLayer.Move(new PointF((float)Number(sample,"x"),(float)Number(sample,"y")));}else s.Viewer.AnnotationLayer.Move(new PointF((float)Number(c,"x"),(float)Number(c,"y")));}return;
+        }
         else if(op=="end")
         {
-            if(modernGesture&&modernGestureSession==s)s.Viewer.AnnotationLayer.End(new PointF((float)Number(c,"x"),(float)Number(c,"y")));modernGesture=false;modernGestureSession=null;
+            if(modernGesture&&modernGestureSession==s)s.Viewer.AnnotationLayer.End(new PointF((float)Number(c,"x"),(float)Number(c,"y")));modernGesture=false;modernGestureSession=null;modernGestureDone=Arg(c,"token");
         }
         else if(op=="quick")s.Viewer.ShowInlineSelection();
-        else if(op=="draftDragBegin")s.Viewer.InlineEditor.BeginExternalDrag();
-        else if(op=="draftDragEnd")s.Viewer.InlineEditor.EndExternalDrag();
+        else if(op=="draftDragBegin"){modernDraftDragging=true;s.Viewer.InlineEditor.BeginExternalDrag();}
+        else if(op=="draftDragEnd"){modernDraftDragging=false;s.Viewer.InlineEditor.EndExternalDrag();}
         else if(op=="draft")
         {
             var editor=s.Viewer.InlineEditor;if(!editor.IsOpen)return;
@@ -200,9 +204,10 @@ internal sealed partial class PdfReaderForm
             if(c.ContainsKey("color"))editor.SetColor(Arg(c,"color"));if(c.ContainsKey("size"))editor.SizeSlider.Value=Math.Max(editor.SizeSlider.Minimum,Math.Min(editor.SizeSlider.Maximum,(int)Number(c,"size")));
             if(c.ContainsKey("transparency"))editor.TransparencySlider.Value=Math.Max(0,Math.Min(100,(int)Number(c,"transparency")));
             if(c.ContainsKey("x"))editor.SetBounds(new RectangleF((float)Number(c,"x"),(float)Number(c,"y"),(float)Number(c,"width"),(float)Number(c,"height")));
+            if(modernDraftDragging)return;
         }
         else if(op=="finish")s.Viewer.FinishInlineEditing();
-        else if(op=="cancel"){modernGesture=false;modernGestureSession=null;s.Viewer.CancelAnnotationOperation();}
+        else if(op=="cancel"){modernDraftDragging=false;modernGesture=false;modernGestureSession=null;s.Viewer.CancelAnnotationOperation();}
         else if(op=="delete") {s.Viewer.FinishInlineEditing();s.Viewer.AnnotationLayer.DeleteSelected();}
         else if(op=="deleteDraft")s.Viewer.InlineEditor.Delete();
         else if(op=="undo" || op=="redo"){s.Viewer.FinishInlineEditing();if(op=="undo")s.Viewer.AnnotationLayer.Undo();else s.Viewer.AnnotationLayer.Redo();}

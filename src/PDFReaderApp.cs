@@ -41,6 +41,7 @@ internal sealed partial class PdfReaderForm : Form
 
     public PdfReaderForm(string[] args)
     {
+        Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         initialPaths = args ?? new string[0];
         Text = "PDF 阅读器";
         StartPosition = FormStartPosition.CenterScreen;

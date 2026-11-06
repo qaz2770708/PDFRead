@@ -3,6 +3,7 @@
     <TargetFramework>net48</TargetFramework>
     <OutputType>WinExe</OutputType>
     <AssemblyName>PDFReader</AssemblyName>
+    <ApplicationIcon>resources\PDFRead.ico</ApplicationIcon>
     <RootNamespace>PDFReader</RootNamespace>
     <LangVersion>latest</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>

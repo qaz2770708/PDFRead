@@ -39,6 +39,13 @@ $webSource=Join-Path $repoRoot 'ui/dist'
 if(-not (Test-Path (Join-Path $webSource 'index.html'))){throw 'HeroUI web assets were not included in the build'}
 $webTarget=Join-Path $outputDirectory 'web'
 New-Item -ItemType Directory -Path $webTarget -Force | Out-Null
+$assetTarget=Join-Path $webTarget 'assets'
+if(Test-Path $assetTarget) {
+    # Vite filenames contain content hashes; keep only files in the current build.
+    Get-ChildItem -LiteralPath $assetTarget -File | ForEach-Object {
+        if(-not (Test-Path -LiteralPath (Join-Path (Join-Path $webSource 'assets') $_.Name))) { Remove-Item -LiteralPath $_.FullName }
+    }
+}
 Get-ChildItem -LiteralPath $webSource | Copy-Item -Destination $webTarget -Recurse -Force
 foreach($runtimeFolderName in @('runtimes','x86','x64','arm64')) {
     $runtimeFolder=Join-Path $runtimeDirectory $runtimeFolderName

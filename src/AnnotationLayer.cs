@@ -22,6 +22,7 @@ internal sealed class AnnotationLayer
     private List<AreaHighlight> before;
     private AreaHighlight preview, original;
     private PointF start;
+    private float inkLeft,inkTop,inkRight,inkBottom;
     private int page;
     private int corner = -1;
     private bool gesture, moving;
@@ -83,7 +84,7 @@ internal sealed class AnnotationLayer
             if(Selected==null)return false;
             before=Copy(marks);original=Copy(Selected);moving=true;gesture=true;return true;
         }
-        before=Copy(marks);gesture=true;
+        before=Copy(marks);gesture=true;inkLeft=inkRight=p.X;inkTop=inkBottom=p.Y;
         preview=new AreaHighlight{id=Guid.NewGuid().ToString("N"),type=TypeFor(Tool),pageIndex=index,coordinateSpace="normalized_page",x=p.X,y=p.Y,width=.001,height=.001,color=Tool==AnnotationTool.Highlight?"#FFE45C":"#2878D7",opacity=Tool==AnnotationTool.Highlight?.45:.95,strokeWidth=2,fontSize=12,createdUtc=DateTime.UtcNow.ToString("o")};
         if(Tool==AnnotationTool.Ink || Tool==AnnotationTool.Line)preview.points.Add(new AnnotationPoint{x=p.X,y=p.Y});
         return true;
@@ -108,8 +109,8 @@ internal sealed class AnnotationLayer
         }
         if(Tool==AnnotationTool.Ink)
         {
-            var last=preview.points.Last();if(Math.Abs(last.x-p.X)+Math.Abs(last.y-p.Y)>.0005)preview.points.Add(new AnnotationPoint{x=p.X,y=p.Y});
-            SetBounds(preview,PointsBox(preview.points));
+            var last=preview.points.Last();if(Math.Abs(last.x-p.X)+Math.Abs(last.y-p.Y)>.0005){preview.points.Add(new AnnotationPoint{x=p.X,y=p.Y});inkLeft=Math.Min(inkLeft,p.X);inkTop=Math.Min(inkTop,p.Y);inkRight=Math.Max(inkRight,p.X);inkBottom=Math.Max(inkBottom,p.Y);}
+            SetBounds(preview,RectangleF.FromLTRB(inkLeft,inkTop,inkRight,inkBottom));
         }
         else
         {
